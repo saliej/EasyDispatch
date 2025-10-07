@@ -1,6 +1,8 @@
 ﻿using EasyDispatch;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace EasyDispatch.IntegrationTests;
@@ -8,127 +10,35 @@ namespace EasyDispatch.IntegrationTests;
 /// <summary>
 /// Integration tests that verify the complete mediator pipeline end-to-end.
 /// </summary>
+[Collection("IntegrationTests")]
 public class IntegrationTests
 {
-    // Domain Messages
-    private record GetUserQuery(int UserId) : IQuery<UserDto>;
-    private record CreateUserCommand(string Name, string Email) : ICommand<int>;
-    private record DeleteUserCommand(int UserId) : ICommand;
-    private record UserCreatedNotification(int UserId, string Name) : INotification;
+	private readonly List<Activity> _activities = new();
+	private ActivityListener _listener;
 
-    private record UserDto(int Id, string Name, string Email);
+	public Task InitializeAsync()
+	{
+		_listener = new ActivityListener
+		{
+			ShouldListenTo = source => source.Name == "EasyDispatch",
+			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+			ActivityStopped = activity => _activities.Add(activity)
+		};
+		ActivitySource.AddActivityListener(_listener);
 
-    // Handlers
-    private class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserDto>
-    {
-        public Task<UserDto> Handle(GetUserQuery query, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new UserDto(query.UserId, "John Doe", "john@example.com"));
-        }
-    }
+		LoggingBehavior<GetUserQuery, UserDto>.Logs.Clear();
 
-    private class CreateUserCommandHandler : ICommandHandler<CreateUserCommand, int>
-    {
-        public Task<int> Handle(CreateUserCommand command, CancellationToken cancellationToken)
-        {
-            // Simulate user creation returning new user ID
-            return Task.FromResult(123);
-        }
-    }
+		return Task.CompletedTask;
+	}
 
-    private class DeleteUserCommandHandler : ICommandHandler<DeleteUserCommand>
-    {
-        public static int DeletedUserId { get; set; }
+	public Task DisposeAsync()
+	{
+		_listener?.Dispose();
+		_activities.Clear();
+		return Task.CompletedTask;
+	}
 
-        public Task Handle(DeleteUserCommand command, CancellationToken cancellationToken)
-        {
-            DeletedUserId = command.UserId;
-            return Task.CompletedTask;
-        }
-    }
-
-    private class EmailNotificationHandler : INotificationHandler<UserCreatedNotification>
-    {
-        public static List<string> SentEmails { get; } = [];
-
-        public Task Handle(UserCreatedNotification notification, CancellationToken cancellationToken)
-        {
-            SentEmails.Add($"Welcome email sent to user {notification.UserId}");
-            return Task.CompletedTask;
-        }
-    }
-
-    private class AuditNotificationHandler : INotificationHandler<UserCreatedNotification>
-    {
-        public static List<string> AuditLog { get; } = [];
-
-        public Task Handle(UserCreatedNotification notification, CancellationToken cancellationToken)
-        {
-            AuditLog.Add($"User created: {notification.Name} (ID: {notification.UserId})");
-            return Task.CompletedTask;
-        }
-    }
-
-    // Behaviors
-    private class LoggingBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-    {
-        public static List<string> Logs { get; } = [];
-
-        public async Task<TResponse> Handle(
-            TMessage message,
-            Func<Task<TResponse>> next,
-            CancellationToken cancellationToken)
-        {
-            var messageName = typeof(TMessage).Name;
-            Logs.Add($"[LOG] Executing {messageName}");
-            
-            var result = await next();
-            
-            Logs.Add($"[LOG] Executed {messageName}");
-            return result;
-        }
-    }
-
-    private class ValidationBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-    {
-        public static List<string> Validations { get; } = [];
-
-        public async Task<TResponse> Handle(
-            TMessage message,
-            Func<Task<TResponse>> next,
-            CancellationToken cancellationToken)
-        {
-            Validations.Add($"[VALIDATE] {typeof(TMessage).Name}");
-            
-            // Simple validation example
-            if (message is CreateUserCommand cmd && string.IsNullOrEmpty(cmd.Name))
-            {
-                throw new InvalidOperationException("Name is required");
-            }
-
-            return await next();
-        }
-    }
-
-    private class PerformanceBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-    {
-        public static List<string> Metrics { get; } = [];
-
-        public async Task<TResponse> Handle(
-            TMessage message,
-            Func<Task<TResponse>> next,
-            CancellationToken cancellationToken)
-        {
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var result = await next();
-            stopwatch.Stop();
-            
-            Metrics.Add($"[PERF] {typeof(TMessage).Name} took {stopwatch.ElapsedMilliseconds}ms");
-            return result;
-        }
-    }
-
-    [Fact]
+	[Fact]
     public async Task CompleteFlow_Query_WithMultipleBehaviors()
     {
         // Arrange
@@ -371,4 +281,60 @@ public class IntegrationTests
             return Task.FromResult(new UserDto(query.UserId, "Test", "test@example.com"));
         }
     }
+
+	[Fact]
+	public async Task CompleteFlow_WithTracing_CreatesActivitiesForFullPipeline()
+	{
+		// Arrange
+		var activities = new List<Activity>();
+		using var listener = new ActivityListener
+		{
+			ShouldListenTo = source => source.Name == "EasyDispatch",
+			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+			ActivityStopped = activity => activities.Add(activity)
+		};
+		ActivitySource.AddActivityListener(listener);
+
+		LoggingBehavior<GetUserQuery, UserDto>.Logs.Clear();
+
+		var services = new ServiceCollection();
+		services.AddMediator(typeof(IntegrationTests).Assembly)
+			.AddOpenBehavior(typeof(LoggingBehavior<,>));
+
+		var provider = services.BuildServiceProvider();
+		var mediator = provider.GetRequiredService<IMediator>();
+
+		// Act - Execute query, command, and notification
+		var userDto = await mediator.SendAsync(new GetUserQuery(1));
+		var newUserId = await mediator.SendAsync(new CreateUserCommand("Jane", "jane@example.com"));
+		await mediator.SendAsync(new DeleteUserCommand(123));
+		await mediator.PublishAsync(new UserCreatedNotification(newUserId, "Jane"));
+
+		// Assert
+		activities.Should().HaveCount(4);
+
+		// Verify query activity
+		var queryActivity = activities[0];
+		queryActivity.DisplayName.Should().Be("EasyDispatch.IntegrationTests.GetUserQuery");
+		queryActivity.Status.Should().Be(ActivityStatusCode.Ok);
+		queryActivity.Tags.Should().Contain(tag =>
+			tag.Key == "easydispatch.operation" && tag.Value == "Query");
+
+		// Verify command with response activity
+		var commandActivity = activities[1];
+		commandActivity.DisplayName.Should().Be("EasyDispatch.IntegrationTests.CreateUserCommand");
+		commandActivity.Status.Should().Be(ActivityStatusCode.Ok);
+
+		// Verify void command activity
+		var voidCommandActivity = activities[2];
+		voidCommandActivity.DisplayName.Should().Be("EasyDispatch.IntegrationTests.DeleteUserCommand");
+		voidCommandActivity.Tags.Should().Contain(tag =>
+			tag.Key == "easydispatch.response_type" && tag.Value == "void");
+
+		// Verify notification activity
+		var notificationActivity = activities[3];
+		notificationActivity.DisplayName.Should().Be("EasyDispatch.IntegrationTests.UserCreatedNotification");
+		notificationActivity.Tags.Should().Contain(tag =>
+			tag.Key == "easydispatch.handler_count");
+	}
 }

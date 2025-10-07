@@ -455,7 +455,120 @@ Depending on your strategy:
 - **ParallelWhenAll**: Collects all parallel exceptions in `AggregateException`
 - **ParallelNoWait**: Logs errors, doesn't throw
 
-### Migration from MediatR
+## Distributed Tracing
+
+EasyDispatch includes built-in support for distributed tracing using `System.Diagnostics.Activity` and OpenTelemetry.
+
+### ActivitySource Versioning
+
+The ActivitySource version **automatically syncs with the package version**. When you update the package, the tracing version updates too:
+
+```xml
+<!-- In EasyDispatch.csproj -->
+<Version>1.0.4</Version>
+<!-- ActivitySource.Version will be "1.0.4" -->
+```
+
+This helps with:
+- **Version filtering** in OpenTelemetry collectors
+- **Breaking change identification** when upgrading
+- **Debugging** version-specific issues
+
+See the ActivitySource Versioning Guide for details on when to bump versions.
+
+### Automatic Activity Creation
+
+Every query, command, and notification automatically creates an Activity with:
+- **Fully qualified names**: `MyApp.NameSpace.GetUserQuery`, `MyApp.NameSpace.CreateUserCommand`, etc.
+- **Tags**: Message type, response type, handler type, behavior count
+- **Status**: Success (Ok) or error with exception details
+- **Exception events**: Full exception information for failed operations
+
+### OpenTelemetry Integration
+
+```csharp
+// Add OpenTelemetry to your application
+services.AddOpenTelemetry()
+    .WithTracing(builder => builder
+        .AddSource("EasyDispatch")  // Subscribe to EasyDispatch activities
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter());  // Or Jaeger, Zipkin, etc.
+```
+
+### Activity Tags
+
+Each activity includes the following tags:
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `easydispatch.operation` | Type of operation | `Query`, `Command`, `Notification` |
+| `easydispatch.message_type` | Full type name of message | `MyApp.GetUserQuery` |
+| `easydispatch.response_type` | Response type | `System.String`, `void` |
+| `easydispatch.handler_type` | Handler implementation type | `MyApp.GetUserQueryHandler` |
+| `easydispatch.behavior_count` | Number of behaviors (as string) | `"3"` |
+| `easydispatch.handler_count` | Notification handlers (as string, notifications only) | `"2"` |
+| `easydispatch.publish_strategy` | Strategy used (notifications only) | `ParallelWhenAll` |
+
+### Example Trace Output
+
+```
+EasyDispatch.Query.GetUserQuery (5.2ms)
+  ├─ easydispatch.operation: Query
+  ├─ easydispatch.message_type: MyApp.Queries.GetUserQuery
+  ├─ easydispatch.response_type: MyApp.DTOs.UserDto
+  ├─ easydispatch.handler_type: MyApp.Handlers.GetUserQueryHandler
+  └─ easydispatch.behavior_count: 2
+```
+
+### Custom ActivityListener
+
+For advanced scenarios, you can create a custom `ActivityListener`:
+
+```csharp
+var listener = new ActivityListener
+{
+    ShouldListenTo = source => source.Name == "EasyDispatch",
+    Sample = (ref ActivityCreationOptions<ActivityContext> _) => 
+        ActivitySamplingResult.AllDataAndRecorded,
+    ActivityStopped = activity =>
+    {
+        Console.WriteLine($"Operation: {activity.DisplayName}");
+        Console.WriteLine($"Duration: {activity.Duration.TotalMilliseconds}ms");
+        Console.WriteLine($"Status: {activity.Status}");
+    }
+};
+ActivitySource.AddActivityListener(listener);
+```
+
+
+## Configuration Options
+
+```csharp
+services.AddMediator(options =>
+{
+    options.Assemblies = new[] { typeof(Program).Assembly };
+    options.HandlerLifetime = ServiceLifetime.Scoped;  // Default
+    options.NotificationPublishStrategy = NotificationPublishStrategy.StopOnFirstException;
+});
+```
+
+## Best Practices
+
+1. **Keep handlers focused** - One responsibility per handler
+2. **Use behaviors for cross-cutting concerns** - Don't repeat logging/validation in handlers
+3. **Queries should be side-effect free** - Only read data in query handlers
+4. **Use appropriate notification strategies** - Consider ordering and error handling needs
+5. **Leverage tracing** - Use OpenTelemetry to monitor performance and troubleshoot issues
+
+## Performance
+
+- Reflection results are cached for minimal overhead
+- Scoped handler lifetime by default (configurable)
+- Optimized for high-throughput scenarios
+- Minimal allocations in hot paths
+
+- ### Migration from MediatR
 
 EasyDispatch uses a very similar API to MediatR, making migration straightforward:
 
@@ -474,37 +587,6 @@ Main differences:
 - `IRequestHandler<,>` → `IQueryHandler<,>` or `ICommandHandler<,>`
 - Additional notification strategies
 
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/easydispatch.git
-
-# Restore dependencies
-dotnet restore
-
-# Build
-dotnet build
-
-# Run tests
-dotnet test
-
-# Run with coverage
-dotnet test --collect:"XPlat Code Coverage"
-```
-
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Resources
-
-- [CQRS Pattern](https://martinfowler.com/bliki/CQRS.html)
-- [Mediator Pattern](https://refactoring.guru/design-patterns/mediator)
-- [Pipeline Pattern](https://docs.microsoft.com/en-us/azure/architecture/patterns/pipes-and-filters)
-
-## Support
-
-- Issues: [GitHub Issues](https://github.com/saliej/easydispatch/issues)
-- Discussions: [GitHub Discussions](https://github.com/saliej/easydispatch/discussions)
+MIT License - see LICENSE file for details

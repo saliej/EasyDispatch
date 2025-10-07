@@ -553,14 +553,6 @@ services.AddMediator(options =>
 });
 ```
 
-## Best Practices
-
-1. **Keep handlers focused** - One responsibility per handler
-2. **Use behaviors for cross-cutting concerns** - Don't repeat logging/validation in handlers
-3. **Queries should be side-effect free** - Only read data in query handlers
-4. **Use appropriate notification strategies** - Consider ordering and error handling needs
-5. **Leverage tracing** - Use OpenTelemetry to monitor performance and troubleshoot issues
-
 ## Performance
 
 - Reflection results are cached for minimal overhead

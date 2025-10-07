@@ -1,9 +1,6 @@
-﻿using EasyDispatch;
+﻿using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using Xunit;
 
 namespace EasyDispatch.IntegrationTests;
 
@@ -13,7 +10,7 @@ namespace EasyDispatch.IntegrationTests;
 [Collection("IntegrationTests")]
 public class IntegrationTests
 {
-	private readonly List<Activity> _activities = new();
+	private readonly List<Activity> _activities = [];
 	private ActivityListener _listener;
 
 	public Task InitializeAsync()
@@ -197,18 +194,12 @@ public class IntegrationTests
             "First: After");
     }
 
-    private class OrderTrackingBehavior : IPipelineBehavior<GetUserQuery, UserDto>
+    private class OrderTrackingBehavior(string name, List<string> log) : IPipelineBehavior<GetUserQuery, UserDto>
     {
-        private readonly string _name;
-        private readonly List<string> _log;
+        private readonly string _name = name;
+        private readonly List<string> _log = log;
 
-        public OrderTrackingBehavior(string name, List<string> log)
-        {
-            _name = name;
-            _log = log;
-        }
-
-        public async Task<UserDto> Handle(
+		public async Task<UserDto> Handle(
             GetUserQuery message,
             Func<Task<UserDto>> next,
             CancellationToken cancellationToken)
@@ -230,22 +221,19 @@ public class IntegrationTests
         var provider = services.BuildServiceProvider();
 
         // Act & Assert - First scope
-        using (var scope1 = provider.CreateScope())
-        {
-            var mediator1 = scope1.ServiceProvider.GetRequiredService<IMediator>();
-            var result1 = await mediator1.SendAsync(new GetUserQuery(1));
-            result1.Should().NotBeNull();
-        }
+        using var scope1 = provider.CreateScope();
+        var mediator1 = scope1.ServiceProvider.GetRequiredService<IMediator>();
+        var result1 = await mediator1.SendAsync(new GetUserQuery(1));
+        result1.Should().NotBeNull();
+        
 
-        // Act & Assert - Second scope (should be independent)
-        using (var scope2 = provider.CreateScope())
-        {
-            var mediator2 = scope2.ServiceProvider.GetRequiredService<IMediator>();
-            var result2 = await mediator2.SendAsync(new GetUserQuery(2));
-            result2.Should().NotBeNull();
-            result2.Id.Should().Be(2);
-        }
-    }
+		// Act & Assert - Second scope (should be independent)
+		using var scope2 = provider.CreateScope();
+		var mediator2 = scope2.ServiceProvider.GetRequiredService<IMediator>();
+		var result2 = await mediator2.SendAsync(new GetUserQuery(2));
+		result2.Should().NotBeNull();
+		result2.Id.Should().Be(2);
+	}
 
     [Fact]
     public async Task CompleteFlow_CancellationToken_PropagatesToHandler()

@@ -92,8 +92,7 @@ public sealed class Mediator : IMediator
 		IQuery<TResponse> query,
 		CancellationToken cancellationToken = default)
 	{
-		if (query == null)
-			throw new ArgumentNullException(nameof(query));
+		ArgumentNullException.ThrowIfNull(query);
 
 		return SendQueryInternal(query, cancellationToken);
 	}
@@ -150,7 +149,7 @@ public sealed class Mediator : IMediator
 			{
 				try
 				{
-					var task = (Task<TResponse>)handleMethod.Invoke(handler, new object[] { query, cancellationToken })!;
+					var task = (Task<TResponse>)handleMethod.Invoke(handler, [query, cancellationToken])!;
 					return await task;
 				}
 				catch (TargetInvocationException ex) when (ex.InnerException != null)
@@ -182,8 +181,7 @@ public sealed class Mediator : IMediator
 		ICommand command,
 		CancellationToken cancellationToken = default)
 	{
-		if (command == null)
-			throw new ArgumentNullException(nameof(command));
+		ArgumentNullException.ThrowIfNull(command);
 
 		return SendCommandInternal(command, cancellationToken);
 	}
@@ -238,7 +236,7 @@ public sealed class Mediator : IMediator
 			{
 				try
 				{
-					var task = (Task)handleMethod.Invoke(handler, new object[] { command, cancellationToken })!;
+					var task = (Task)handleMethod.Invoke(handler, [command, cancellationToken])!;
 					await task;
 					return Unit.Value;
 				}
@@ -270,8 +268,7 @@ public sealed class Mediator : IMediator
 		ICommand<TResponse> command,
 		CancellationToken cancellationToken = default)
 	{
-		if (command == null)
-			throw new ArgumentNullException(nameof(command));
+		ArgumentNullException.ThrowIfNull(command);
 
 		return SendCommandWithResponseInternal(command, cancellationToken);
 	}
@@ -326,7 +323,7 @@ public sealed class Mediator : IMediator
 			{
 				try
 				{
-					var task = (Task<TResponse>)handleMethod.Invoke(handler, new object[] { command, cancellationToken })!;
+					var task = (Task<TResponse>)handleMethod.Invoke(handler, [command, cancellationToken])!;
 					return await task;
 				}
 				catch (TargetInvocationException ex) when (ex.InnerException != null)
@@ -359,8 +356,7 @@ public sealed class Mediator : IMediator
 		INotification notification,
 		CancellationToken cancellationToken = default)
 	{
-		if (notification == null)
-			throw new ArgumentNullException(nameof(notification));
+		ArgumentNullException.ThrowIfNull(notification);
 
 		var notificationType = notification.GetType();
 
@@ -455,7 +451,7 @@ public sealed class Mediator : IMediator
 		}
 	}
 
-	private async Task PublishSequentialStopOnError(
+	private static async Task PublishSequentialStopOnError(
 		INotification notification,
 		object[] handlers,
 		object[] behaviors,
@@ -504,7 +500,7 @@ public sealed class Mediator : IMediator
 		}
 	}
 
-	private async Task PublishParallelWhenAll(
+	private static async Task PublishParallelWhenAll(
 		INotification notification,
 		Type notificationType,
 		object[] handlers,
@@ -570,7 +566,7 @@ public sealed class Mediator : IMediator
 		return Task.CompletedTask;
 	}
 
-	private Func<Task<Unit>> CreateNotificationHandlerFunc(
+	private static Func<Task<Unit>> CreateNotificationHandlerFunc(
 		INotification notification,
 		object handler,
 		MethodInfo handleMethod,
@@ -580,7 +576,7 @@ public sealed class Mediator : IMediator
 		{
 			try
 			{
-				var task = (Task)handleMethod.Invoke(handler, new object[] { notification, cancellationToken })!;
+				var task = (Task)handleMethod.Invoke(handler, [notification, cancellationToken])!;
 				await task;
 				return Unit.Value;
 			}
@@ -592,7 +588,7 @@ public sealed class Mediator : IMediator
 		};
 	}
 
-	private Func<Task<TResponse>> ChainBehaviors<TMessage, TResponse>(
+	private static Func<Task<TResponse>> ChainBehaviors<TMessage, TResponse>(
 		object[] behaviors,
 		TMessage message,
 		Func<Task<TResponse>> handlerFunc,
@@ -610,7 +606,7 @@ public sealed class Mediator : IMediator
 					var behaviorHandleMethod = behavior.GetType().GetMethod("Handle")!;
 					var task = (Task<TResponse>)behaviorHandleMethod.Invoke(
 						currentBehavior,
-						new object[] { message!, currentNext, cancellationToken })!;
+						[message!, currentNext, cancellationToken])!;
 					return await task;
 				}
 				catch (TargetInvocationException ex) when (ex.InnerException != null)

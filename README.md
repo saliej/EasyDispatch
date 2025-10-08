@@ -133,7 +133,7 @@ builder.Services.AddMediator(options =>
 
 ## Documentation
 
-**[View Full Documentation](../../wiki)** - Complete guide with examples
+**[View Full Documentation](../../wiki)**
 
 ## Examples
 

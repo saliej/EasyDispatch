@@ -12,6 +12,15 @@ public interface IQuery<out TResponse>
 }
 
 /// <summary>
+/// Marker interface for streaming queries that return results incrementally.
+/// Streaming queries are ideal for large datasets that should not be loaded into memory at once.
+/// </summary>
+/// <typeparam name="TResult">The type of each result item in the stream</typeparam>
+public interface IStreamQuery<out TResult>
+{
+}
+
+/// <summary>
 /// Marker interface for commands that do not return a value (void).
 /// Commands represent operations that cause side effects or state changes.
 /// </summary>

@@ -48,48 +48,18 @@ internal static class StartupValidator
 			.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
 			.ToList();
 
-		// Validate queries
-		var queries = messageTypes
-			.Where(t => t.GetInterfaces()
-				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
-			.ToList();
+		ValidateQueries(services, results, messageTypes);
+		ValidateVoidCommands(services, results, messageTypes);
+		ValidateCommandsWithResponse(services, results, messageTypes);
 
-		foreach (var query in queries)
-		{
-			var queryInterface = query.GetInterfaces()
-				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>));
+		// Note: Notifications are NOT validated as they can have zero or multiple handlers
+		// This is by design for the pub/sub pattern
 
-			var responseType = queryInterface.GetGenericArguments()[0];
-			var handlerType = typeof(IQueryHandler<,>).MakeGenericType(query, responseType);
+		return results;
+	}
 
-			if (!IsHandlerRegistered(services, handlerType))
-			{
-				results.Add(new ValidationResult(
-					query,
-					handlerType,
-					"Query"));
-			}
-		}
-
-		// Validate void commands
-		var voidCommands = messageTypes
-			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
-			.ToList();
-
-		foreach (var command in voidCommands)
-		{
-			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
-
-			if (!IsHandlerRegistered(services, handlerType))
-			{
-				results.Add(new ValidationResult(
-					command,
-					handlerType,
-					"Command (void)"));
-			}
-		}
-
-		// Validate commands with response
+	private static void ValidateCommandsWithResponse(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
+	{
 		var commandsWithResponse = messageTypes
 			.Where(t => t.GetInterfaces()
 				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>)))
@@ -111,11 +81,51 @@ internal static class StartupValidator
 					"Command"));
 			}
 		}
+	}
 
-		// Note: Notifications are NOT validated as they can have zero or multiple handlers
-		// This is by design for the pub/sub pattern
+	private static void ValidateVoidCommands(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
+	{
+		var voidCommands = messageTypes
+			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
+			.ToList();
 
-		return results;
+		foreach (var command in voidCommands)
+		{
+			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
+
+			if (!IsHandlerRegistered(services, handlerType))
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command (void)"));
+			}
+		}
+	}
+
+	private static void ValidateQueries(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
+	{
+		var queries = messageTypes
+			.Where(t => t.GetInterfaces()
+				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
+			.ToList();
+
+		foreach (var query in queries)
+		{
+			var queryInterface = query.GetInterfaces()
+				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>));
+
+			var responseType = queryInterface.GetGenericArguments()[0];
+			var handlerType = typeof(IQueryHandler<,>).MakeGenericType(query, responseType);
+
+			if (!IsHandlerRegistered(services, handlerType))
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"Query"));
+			}
+		}
 	}
 
 	private static bool IsHandlerRegistered(IServiceCollection services, Type handlerType)

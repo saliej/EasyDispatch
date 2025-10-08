@@ -13,6 +13,7 @@ public interface IMediator
 	Task<TResponse> SendAsync<TResponse>(ICommand<TResponse> command, CancellationToken cancellationToken = default);
 	Task PublishAsync(INotification notification, CancellationToken cancellationToken = default);
 	Task PublishAsync(INotification notification, NotificationPublishStrategy publishStrategy, CancellationToken cancellationToken = default);
+	IAsyncEnumerable<TResult> StreamAsync<TResult>(IStreamQuery<TResult> query, CancellationToken cancellationToken = default);
 }
 
 public sealed class Mediator : IMediator
@@ -39,6 +40,102 @@ public sealed class Mediator : IMediator
 	{
 		ArgumentNullException.ThrowIfNull(query);
 		return SendQueryInternal(query, cancellationToken);
+	}
+
+	public IAsyncEnumerable<TResult> StreamAsync<TResult>(IStreamQuery<TResult> query, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(query);
+		return StreamQueryInternal(query, cancellationToken);
+	}
+
+	private async IAsyncEnumerable<TResult> StreamQueryInternal<TResult>(
+	IStreamQuery<TResult> query,
+	[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+	{
+		var queryType = query.GetType();
+
+		using var activity = EasyDispatchActivitySource.Source.StartActivity(
+			queryType.FullName ?? queryType.Name,
+			ActivityKind.Internal);
+
+		activity?.SetTag("easydispatch.message_type", queryType.FullName);
+		activity?.SetTag("easydispatch.result_type", typeof(TResult).FullName);
+		activity?.SetTag("easydispatch.operation", "StreamQuery");
+
+		int itemCount = 0;
+		Exception? streamException = null;
+
+		// Use cached handler type
+		var handlerType = _handlerTypeCache.GetOrAdd(
+			queryType,
+			qt => typeof(IStreamQueryHandler<,>).MakeGenericType(qt, typeof(TResult)));
+
+		var handler = _serviceProvider.GetService(handlerType);
+
+		if (handler == null)
+		{
+			activity?.SetStatus(ActivityStatusCode.Error, "Handler not found");
+			throw new InvalidOperationException(
+				$"No handler registered for streaming query '{queryType.Name}'.\n" +
+				$"Expected a handler implementing IStreamQueryHandler<{queryType.Name}, {typeof(TResult).Name}>.\n" +
+				$"Did you forget to call AddMediator() with the assembly containing your handlers?");
+		}
+
+		activity?.SetTag("easydispatch.handler_type", handler.GetType().FullName);
+
+		// Get cached Handle method
+		var handleMethod = _handleMethodCache.GetOrAdd(handlerType, ht =>
+			ht.GetMethod("Handle") ?? throw new InvalidOperationException($"Handle method not found on {ht.Name}"));
+
+		// Get stream behaviors
+		var behaviorType = _behaviorTypeCache.GetOrAdd(
+			queryType,
+			qt => typeof(IStreamPipelineBehavior<,>).MakeGenericType(qt, typeof(TResult)));
+
+		var behaviors = _serviceProvider.GetServices(behaviorType).Reverse().ToArray();
+		activity?.SetTag("easydispatch.behavior_count", behaviors.Length.ToString());
+
+		// Build the handler execution
+		Func<IAsyncEnumerable<TResult>> handlerFunc = () =>
+		{
+			try
+			{
+				var stream = (IAsyncEnumerable<TResult>)handleMethod.Invoke(handler, [query, cancellationToken])!;
+				return stream;
+			}
+			catch (TargetInvocationException ex) when (ex.InnerException != null)
+			{
+				System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+				throw;
+			}
+		};
+
+		// Chain behaviors
+		handlerFunc = ChainStreamBehaviors(behaviors, query, handlerFunc, cancellationToken);
+
+		// Execute with exception handling
+		IAsyncEnumerable<TResult> resultStream;
+		try
+		{
+			resultStream = handlerFunc();
+		}
+		catch (Exception ex)
+		{
+			streamException = ex;
+			activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+			activity?.AddException(ex);
+			throw;
+		}
+
+		// Stream enumeration without try-catch
+		await foreach (var item in resultStream.WithCancellation(cancellationToken))
+		{
+			itemCount++;
+			yield return item;
+		}
+
+		activity?.SetTag("easydispatch.stream_item_count", itemCount.ToString());
+		activity?.SetStatus(ActivityStatusCode.Ok);
 	}
 
 	private async Task<TResponse> SendQueryInternal<TResponse>(IQuery<TResponse> query, CancellationToken cancellationToken)
@@ -539,6 +636,38 @@ public sealed class Mediator : IMediator
 						currentBehavior,
 						[message!, currentNext, cancellationToken])!;
 					return await task;
+				}
+				catch (TargetInvocationException ex) when (ex.InnerException != null)
+				{
+					System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+					throw;
+				}
+			};
+		}
+
+		return handlerFunc;
+	}
+
+	private static Func<IAsyncEnumerable<TResult>> ChainStreamBehaviors<TQuery, TResult>(
+		object[] behaviors,
+		TQuery query,
+		Func<IAsyncEnumerable<TResult>> handlerFunc,
+		CancellationToken cancellationToken)
+	{
+		foreach (var behavior in behaviors)
+		{
+			var currentNext = handlerFunc;
+			var currentBehavior = behavior;
+
+			handlerFunc = () =>
+			{
+				try
+				{
+					var behaviorHandleMethod = behavior.GetType().GetMethod("Handle")!;
+					var stream = (IAsyncEnumerable<TResult>)behaviorHandleMethod.Invoke(
+						currentBehavior,
+						[query!, currentNext, cancellationToken])!;
+					return stream;
 				}
 				catch (TargetInvocationException ex) when (ex.InnerException != null)
 				{

@@ -8,7 +8,7 @@ A lightweight, high-performance Mediator library for .NET focused on ease-of-use
 
 ## Features
 
-**Simple API** - Minimal boilerplate, intuitive API
+**Simple API** - Minimal boilerplate, intuitive API  
 **CQRS Support** - Clean separation of queries, commands, and notifications  
 **Streaming Queries** - Handle large datasets efficiently with `IAsyncEnumerable`  
 **Pipeline Behaviors** - Add cross-cutting concerns like logging and validation  

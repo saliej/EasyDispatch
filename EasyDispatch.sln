@@ -22,6 +22,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyDispatch.PerformanceTests", "EasyDispatch.PerformanceTests\EasyDispatch.PerformanceTests.csproj", "{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,6 +50,10 @@ Global
 		{6F307394-FC2A-4252-8BDC-8C20C1225DBA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6F307394-FC2A-4252-8BDC-8C20C1225DBA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6F307394-FC2A-4252-8BDC-8C20C1225DBA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -57,6 +63,7 @@ Global
 		{9DB4C55E-2ECB-4AD7-B3C6-7C949F7EF3E4} = {D7746E0C-7EF3-4F1C-95E2-5CD577346F91}
 		{BFFE5A0E-6B02-47CA-8423-FCCD3C44CC02} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{6F307394-FC2A-4252-8BDC-8C20C1225DBA} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{1958C6AC-9DEE-D51E-998C-BCBB8D24AA3F} = {D7746E0C-7EF3-4F1C-95E2-5CD577346F91}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {7A63E7DF-EAE5-434C-9584-E256B1AAA0A6}

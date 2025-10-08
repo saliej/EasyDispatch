@@ -193,11 +193,6 @@ internal static class StartupValidator
 		return results;
 	}
 
-	private static bool IsHandlerRegistered(IServiceCollection services, Type handlerType)
-	{
-		return services.Any(d => d.ServiceType == handlerType);
-	}
-
 	private static int CountHandlers(IServiceCollection services, Type handlerType)
 	{
 		return services.Count(d => d.ServiceType == handlerType);

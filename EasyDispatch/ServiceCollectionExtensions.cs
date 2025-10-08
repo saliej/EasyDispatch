@@ -41,7 +41,8 @@ public static class ServiceCollectionExtensions
 		var handlerTypes = new List<Type>(options.HandlerTypes);
 		handlerTypes.AddRange((options.Assemblies ?? [])
 					.SelectMany(a => a.GetTypes())
-					.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition));
+					.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+					.Distinct());
 
 		// Scan and register all handlers from the specified assemblies
 		RegisterHandlers(services, handlerTypes, options.HandlerLifetime);

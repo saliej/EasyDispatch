@@ -685,6 +685,10 @@ public class StartupValidationIntegrationTests
 		var validCommandType = dynamicAssembly.GetType("ValidCommand");
 		var validStreamQueryType = dynamicAssembly.GetType("ValidStreamQuery");
 
+		validQueryType.Should().NotBeNull();
+		validCommandType.Should().NotBeNull();
+		validStreamQueryType.Should().NotBeNull();
+
 		var queryInstance = Activator.CreateInstance(validQueryType, 42);
 		var commandInstance = Activator.CreateInstance(validCommandType, "test");
 		var streamQueryInstance = Activator.CreateInstance(validStreamQueryType, 3);
@@ -693,14 +697,15 @@ public class StartupValidationIntegrationTests
 		dynamic dynamicMediator = mediator;
 
 		// Query
-		var queryResult = await dynamicMediator.SendAsync((dynamic)queryInstance);
+		var queryResult = await dynamicMediator.SendAsync((dynamic?)queryInstance);
 
 		// Command  
-		await dynamicMediator.SendAsync((dynamic)commandInstance);
+		await dynamicMediator.SendAsync((dynamic?)commandInstance);
 
 		// Stream
 		var streamResults = new List<int>();
-		var asyncEnumerable = dynamicMediator.StreamAsync((dynamic)streamQueryInstance) as IAsyncEnumerable<int>;
+		var asyncEnumerable = dynamicMediator.StreamAsync((dynamic?)streamQueryInstance) as IAsyncEnumerable<int>;
+		asyncEnumerable.Should().NotBeNull();
 		await foreach (var item in asyncEnumerable)
 		{
 			streamResults.Add(item);

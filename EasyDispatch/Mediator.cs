@@ -111,7 +111,7 @@ public sealed class Mediator : IMediator
 		};
 
 		// Chain behaviors
-		handlerFunc = ChainStreamBehaviors(behaviors, query, handlerFunc, cancellationToken);
+		handlerFunc = ChainStreamBehaviors(behaviors!, query, handlerFunc, cancellationToken);
 
 		// Execute with exception handling
 		IAsyncEnumerable<TResult> resultStream;
@@ -188,7 +188,7 @@ public sealed class Mediator : IMediator
 				}
 			};
 
-			handlerFunc = ChainBehaviors(behaviors, query, handlerFunc, cancellationToken);
+			handlerFunc = ChainBehaviors(behaviors!, query, handlerFunc, cancellationToken);
 			var result = await handlerFunc();
 			activity?.SetStatus(ActivityStatusCode.Ok);
 			return result;
@@ -258,7 +258,7 @@ public sealed class Mediator : IMediator
 				}
 			};
 
-			handlerFunc = ChainBehaviors(behaviors, command, handlerFunc, cancellationToken);
+			handlerFunc = ChainBehaviors(behaviors!, command, handlerFunc, cancellationToken);
 			await handlerFunc();
 			activity?.SetStatus(ActivityStatusCode.Ok);
 		}
@@ -326,7 +326,7 @@ public sealed class Mediator : IMediator
 				}
 			};
 
-			handlerFunc = ChainBehaviors(behaviors, command, handlerFunc, cancellationToken);
+			handlerFunc = ChainBehaviors(behaviors!, command, handlerFunc, cancellationToken);
 			var result = await handlerFunc();
 			activity?.SetStatus(ActivityStatusCode.Ok);
 			return result;
@@ -385,7 +385,7 @@ public sealed class Mediator : IMediator
 
 				foreach (var handler in handlers)
 				{
-					allHandlers.Add((handlerType, handler));
+					allHandlers.Add((handlerType, handler)!);
 				}
 			}
 
@@ -402,7 +402,7 @@ public sealed class Mediator : IMediator
 				notificationType.Name, allHandlers.Count);
 
 			// Execute based on strategy
-			await ExecutePolymorphicNotificationHandlers(notification, notificationType, allHandlers, behaviors, publishStrategy, cancellationToken);
+			await ExecutePolymorphicNotificationHandlers(notification, notificationType, allHandlers, behaviors!, publishStrategy, cancellationToken);
 
 			activity?.SetStatus(ActivityStatusCode.Ok);
 		}

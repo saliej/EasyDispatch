@@ -1,9 +1,10 @@
-﻿using EasyDispatch;
-using AwesomeAssertions;
+﻿using AwesomeAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
+
+namespace EasyDispatch.IntegrationTests;
 
 /// <summary>
 /// Integration tests for startup validation behavior.
@@ -41,7 +42,7 @@ public class StartupValidationIntegrationTests
 		await TestWithValidationMode(StartupValidation.FailFast);
 	}
 
-	private async Task TestWithValidationMode(StartupValidation mode)
+	private static async Task TestWithValidationMode(StartupValidation mode)
 	{
 		// Arrange
 		var services = new ServiceCollection();

@@ -86,7 +86,7 @@ app.MapGet("/", () => Results.Ok(new
 	service = "EasyDispatch OpenTelemetry Demo",
 	version = "1.0.0",
 	exporter = exporterType,
-	jaegerUI = exporterType.ToLower() == "jaeger" ? "http://localhost:16686" : null,
+	jaegerUI = String.Equals(exporterType, "jaeger", StringComparison.CurrentCultureIgnoreCase) ? "http://localhost:16686" : null,
 	endpoints = new[]
 	{
 		new { method = "GET", path = "/users/{id}", description = "Get user by ID" },
@@ -146,7 +146,7 @@ Console.WriteLine("============================================");
 Console.WriteLine($" API: http://localhost:5000");
 Console.WriteLine($" Exporter: {exporterType}");
 
-if (exporterType.ToLower() == "jaeger")
+if (String.Equals(exporterType, "jaeger", StringComparison.CurrentCultureIgnoreCase))
 {
 	Console.WriteLine($"Jaeger UI: http://localhost:16686");
 	Console.WriteLine("   → Look for service: 'EasyDispatch.Demo'");

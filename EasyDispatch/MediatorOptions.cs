@@ -4,62 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EasyDispatch;
 
-public class HandlerTypeSource
-{
-	public List<Type> Types { get; private set; } = [];
-
-	// Constructor for single Assembly
-	private HandlerTypeSource(Assembly assembly)
-	{
-		Types.AddRange(assembly.GetTypes()
-				.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition));
-	}
-
-	// Constructor for List<Assembly>
-	private HandlerTypeSource(List<Assembly> assemblies)
-	{
-		Types.AddRange(assemblies
-			.SelectMany(a => a.GetTypes())
-			.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition));
-	}
-
-	// Constructor for single Type
-	private HandlerTypeSource(Type type)
-	{
-		Types.Add(type);
-	}
-
-	// Constructor for List<Type>
-	private HandlerTypeSource(List<Type> types)
-	{
-		Types.AddRange(types);
-	}
-
-	// Assignment operator for Assembly
-	public static implicit operator HandlerTypeSource(Assembly assembly)
-	{
-		return new HandlerTypeSource(assembly);
-	}
-
-	// Assignment operator for List<Assembly>
-	public static implicit operator HandlerTypeSource(List<Assembly> assemblies)
-	{
-		return new HandlerTypeSource(assemblies);
-	}
-
-	// Assignment operator for Type
-	public static implicit operator HandlerTypeSource(Type type)
-	{
-		return new HandlerTypeSource(type);
-	}
-
-	// Assignment operator for List<Type>
-	public static implicit operator HandlerTypeSource(List<Type> types)
-	{
-		return new HandlerTypeSource(types);
-	}
-}
-
 /// <summary>
 /// Configuration options for the Mediator.
 /// </summary>

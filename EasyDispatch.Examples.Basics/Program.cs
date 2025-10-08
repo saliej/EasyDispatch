@@ -88,7 +88,7 @@ class Program
 		Console.Write("Your choice: ");
 	}
 
-	static IServiceCollection ConfigureServices()
+	static ServiceCollection ConfigureServices()
 	{
 		var services = new ServiceCollection();
 

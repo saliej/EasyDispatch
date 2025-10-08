@@ -10,31 +10,6 @@ namespace EasyDispatch.IntegrationTests;
 [Collection("IntegrationTests")]
 public class IntegrationTests
 {
-	private readonly List<Activity> _activities = [];
-	private ActivityListener _listener;
-
-	public Task InitializeAsync()
-	{
-		_listener = new ActivityListener
-		{
-			ShouldListenTo = source => source.Name == "EasyDispatch",
-			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-			ActivityStopped = activity => _activities.Add(activity)
-		};
-		ActivitySource.AddActivityListener(_listener);
-
-		LoggingBehavior<GetUserQuery, UserDto>.Logs.Clear();
-
-		return Task.CompletedTask;
-	}
-
-	public Task DisposeAsync()
-	{
-		_listener?.Dispose();
-		_activities.Clear();
-		return Task.CompletedTask;
-	}
-
 	[Fact]
     public async Task CompleteFlow_Query_WithMultipleBehaviors()
     {

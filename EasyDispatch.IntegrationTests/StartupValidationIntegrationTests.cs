@@ -47,7 +47,7 @@ public class StartupValidationIntegrationTests
 		var services = new ServiceCollection();
 		services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationIntegrationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationIntegrationTests).Assembly];
 			options.StartupValidation = mode;
 		});
 

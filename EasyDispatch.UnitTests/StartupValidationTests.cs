@@ -16,13 +16,20 @@ public class StartupValidationTests
 	public record UnregisteredQuery(int Id) : IQuery<string>;
 	public record UnregisteredVoidCommand(string Name) : ICommand;
 	public record UnregisteredCommandWithResponse(int Value) : ICommand<int>;
+	public record UnregisteredStreamQuery(int Count) : IStreamQuery<int>;
 	public record UnregisteredNotification(string Message) : INotification;
 
 	// Test messages WITH handlers
 	public record RegisteredQuery(int Id) : IQuery<string>;
 	public record RegisteredVoidCommand(string Name) : ICommand;
 	public record RegisteredCommandWithResponse(int Value) : ICommand<int>;
+	public record RegisteredStreamQuery(int Count) : IStreamQuery<int>;
 	public record RegisteredNotification(string Message) : INotification;
+
+	// Test message for duplicate handlers
+	public record DuplicateHandlerQuery(int Id) : IQuery<string>;
+	public record DuplicateHandlerCommand(string Name) : ICommand;
+	public record DuplicateHandlerStreamQuery(int Count) : IStreamQuery<int>;
 
 	// Handlers
 	public class RegisteredQueryHandler : IQueryHandler<RegisteredQuery, string>
@@ -49,11 +56,80 @@ public class StartupValidationTests
 		}
 	}
 
+	public class RegisteredStreamQueryHandler : IStreamQueryHandler<RegisteredStreamQuery, int>
+	{
+		public async IAsyncEnumerable<int> Handle(
+			RegisteredStreamQuery query,
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+		{
+			for (int i = 1; i <= query.Count; i++)
+			{
+				await Task.Delay(1, cancellationToken);
+				yield return i;
+			}
+		}
+	}
+
 	public class RegisteredNotificationHandler : INotificationHandler<RegisteredNotification>
 	{
 		public Task Handle(RegisteredNotification notification, CancellationToken cancellationToken)
 		{
 			return Task.CompletedTask;
+		}
+	}
+
+	// Duplicate handlers
+	public class DuplicateQueryHandler1 : IQueryHandler<DuplicateHandlerQuery, string>
+	{
+		public Task<string> Handle(DuplicateHandlerQuery query, CancellationToken cancellationToken)
+		{
+			return Task.FromResult("Handler1");
+		}
+	}
+
+	public class DuplicateQueryHandler2 : IQueryHandler<DuplicateHandlerQuery, string>
+	{
+		public Task<string> Handle(DuplicateHandlerQuery query, CancellationToken cancellationToken)
+		{
+			return Task.FromResult("Handler2");
+		}
+	}
+
+	public class DuplicateCommandHandler1 : ICommandHandler<DuplicateHandlerCommand>
+	{
+		public Task Handle(DuplicateHandlerCommand command, CancellationToken cancellationToken)
+		{
+			return Task.CompletedTask;
+		}
+	}
+
+	public class DuplicateCommandHandler2 : ICommandHandler<DuplicateHandlerCommand>
+	{
+		public Task Handle(DuplicateHandlerCommand command, CancellationToken cancellationToken)
+		{
+			return Task.CompletedTask;
+		}
+	}
+
+	public class DuplicateStreamHandler1 : IStreamQueryHandler<DuplicateHandlerStreamQuery, int>
+	{
+		public async IAsyncEnumerable<int> Handle(
+			DuplicateHandlerStreamQuery query,
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+		{
+			await Task.Delay(1, cancellationToken);
+			yield return 1;
+		}
+	}
+
+	public class DuplicateStreamHandler2 : IStreamQueryHandler<DuplicateHandlerStreamQuery, int>
+	{
+		public async IAsyncEnumerable<int> Handle(
+			DuplicateHandlerStreamQuery query,
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+		{
+			await Task.Delay(1, cancellationToken);
+			yield return 2;
 		}
 	}
 
@@ -66,7 +142,7 @@ public class StartupValidationTests
 		// Act - Register mediator with unregistered message types but validation set to None
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationTests).Assembly];
 			options.StartupValidation = StartupValidation.None;
 		});
 
@@ -83,7 +159,7 @@ public class StartupValidationTests
 		// Act - Register mediator with unregistered message types and FailFast
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -95,8 +171,124 @@ public class StartupValidationTests
 		exception.Message.Should().Contain("UnregisteredQuery");
 		exception.Message.Should().Contain("UnregisteredVoidCommand");
 		exception.Message.Should().Contain("UnregisteredCommandWithResponse");
+		exception.Message.Should().Contain("UnregisteredStreamQuery");
 		// Notifications should NOT be included (they can have 0 or multiple handlers)
 		exception.Message.Should().NotContain("UnregisteredNotification");
+	}
+
+	[Fact]
+	public void AddMediator_WithDuplicateQueryHandlers_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		// Manually register duplicate handlers
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler1>();
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler2>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(StartupValidationTests).Assembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Handlers");
+		exception.Message.Should().Contain("DuplicateHandlerQuery");
+		exception.Message.Should().Contain("2 handlers registered");
+	}
+
+	[Fact]
+	public void AddMediator_WithDuplicateCommandHandlers_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		services.AddScoped<ICommandHandler<DuplicateHandlerCommand>, DuplicateCommandHandler1>();
+		services.AddScoped<ICommandHandler<DuplicateHandlerCommand>, DuplicateCommandHandler2>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(StartupValidationTests).Assembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Handlers");
+		exception.Message.Should().Contain("DuplicateHandlerCommand");
+		exception.Message.Should().Contain("2 handlers registered");
+	}
+
+	[Fact]
+	public void AddMediator_WithDuplicateStreamHandlers_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		services.AddScoped<IStreamQueryHandler<DuplicateHandlerStreamQuery, int>, DuplicateStreamHandler1>();
+		services.AddScoped<IStreamQueryHandler<DuplicateHandlerStreamQuery, int>, DuplicateStreamHandler2>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(StartupValidationTests).Assembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Handlers");
+		exception.Message.Should().Contain("DuplicateHandlerStreamQuery");
+		exception.Message.Should().Contain("2 handlers registered");
+	}
+
+	[Fact]
+	public void AddMediator_WithMultipleNotificationHandlers_DoesNotThrow()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		// Multiple notification handlers should be allowed (pub/sub pattern)
+		services.AddScoped<INotificationHandler<RegisteredNotification>, RegisteredNotificationHandler>();
+		services.AddScoped<INotificationHandler<RegisteredNotification>, SecondNotificationHandler>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(object).Assembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act - Should not throw for multiple notification handlers
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		act.Should().NotThrow();
+	}
+
+	private class SecondNotificationHandler : INotificationHandler<RegisteredNotification>
+	{
+		public Task Handle(RegisteredNotification notification, CancellationToken cancellationToken)
+		{
+			return Task.CompletedTask;
+		}
 	}
 
 	[Fact]
@@ -113,7 +305,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationTests).Assembly];
 			options.StartupValidation = StartupValidation.Warn;
 		});
 
@@ -131,12 +323,13 @@ public class StartupValidationTests
 		services.AddScoped<IQueryHandler<RegisteredQuery, string>, RegisteredQueryHandler>();
 		services.AddScoped<ICommandHandler<RegisteredVoidCommand>, RegisteredVoidCommandHandler>();
 		services.AddScoped<ICommandHandler<RegisteredCommandWithResponse, int>, RegisteredCommandWithResponseHandler>();
+		services.AddScoped<IStreamQueryHandler<RegisteredStreamQuery, int>, RegisteredStreamQueryHandler>();
 		services.AddScoped<INotificationHandler<RegisteredNotification>, RegisteredNotificationHandler>();
 		services.AddScoped<IMediator, Mediator>();
 
 		var options = new MediatorOptions
 		{
-			Assemblies = new[] { typeof(RegisteredQuery).Assembly },
+			Assemblies = [typeof(RegisteredQuery).Assembly],
 			StartupValidation = StartupValidation.FailFast
 		};
 		services.AddSingleton(options);
@@ -152,14 +345,10 @@ public class StartupValidationTests
 	public void AddMediator_NotificationWithoutHandler_DoesNotFailValidation()
 	{
 		// Arrange
-		var services = new ServiceCollection();
-
-		// Arrange - Create a scenario that would fail in production startup
-		// We create a dummy assembly in memory with a message that has no handler
-		var sourceCode = @"public record NoHandlerNotification(int Id) : EasyDispatch.INotification;";
+		var sourceCode = @"public record NoHandlerNotification() : EasyDispatch.INotification;";
 
 		// Get the assembly that contains IQuery<T>
-		var easyDispatchAssembly = typeof(IQuery<>).Assembly; // or Assembly.Load("EasyDispatch")
+		var easyDispatchAssembly = typeof(IQuery<>).Assembly;
 
 		var compilation = CSharpCompilation.Create("DynamicAssembly")
 			.WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
@@ -176,6 +365,8 @@ public class StartupValidationTests
 
 		ms.Seek(0, SeekOrigin.Begin);
 		var assembly = Assembly.Load(ms.ToArray());
+
+		var services = new ServiceCollection();
 
 		// Register only notification message, no handler
 		services.AddScoped<IMediator, Mediator>();
@@ -195,6 +386,35 @@ public class StartupValidationTests
 	}
 
 	[Fact]
+	public void AddMediator_CombinedMissingAndDuplicateHandlers_ReportsBothIssues()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		// Add duplicate handlers for one message
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler1>();
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler2>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(StartupValidationTests).Assembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Missing Handlers");
+		exception.Message.Should().Contain("Multiple Handlers");
+		exception.Message.Should().Contain("UnregisteredQuery");
+		exception.Message.Should().Contain("DuplicateHandlerQuery");
+	}
+
+	[Fact]
 	public void AddMediator_PartialHandlerRegistration_FailsOnlyForMissing()
 	{
 		// Arrange
@@ -207,7 +427,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -236,7 +456,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(StartupValidationTests).Assembly };
+			options.Assemblies = [typeof(StartupValidationTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -245,63 +465,18 @@ public class StartupValidationTests
 
 		// Should contain helpful error message
 		exception.Message.Should().Contain("startup validation failed");
-		exception.Message.Should().Contain("message(s) have no registered handlers");
+		exception.Message.Should().Contain("issue(s) found");
 
 		// Should list affected message types
 		exception.Message.Should().Contain("UnregisteredQuery");
 		exception.Message.Should().Contain("UnregisteredVoidCommand");
 		exception.Message.Should().Contain("UnregisteredCommandWithResponse");
+		exception.Message.Should().Contain("UnregisteredStreamQuery");
 
 		// Should provide resolution steps
 		exception.Message.Should().Contain("To fix this issue");
-		exception.Message.Should().Contain("Register handlers");
+		exception.Message.Should().Contain("Register exactly one handler");
 		exception.Message.Should().Contain("Set StartupValidation to None or Warn");
-	}
-
-	[Fact]
-	public void AddMediator_ObsoleteProperty_StillWorks()
-	{
-		// Arrange
-		var options = new MediatorOptions();
-
-		// Act - Use obsolete property
-#pragma warning disable CS0618 // Type or member is obsolete
-		options.ValidateHandlersAtStartup = true;
-#pragma warning restore CS0618
-
-		// Assert - Should map to new property
-		options.StartupValidation.Should().Be(StartupValidation.FailFast);
-
-		// Act - Set to false
-#pragma warning disable CS0618
-		options.ValidateHandlersAtStartup = false;
-#pragma warning restore CS0618
-
-		// Assert
-		options.StartupValidation.Should().Be(StartupValidation.None);
-	}
-
-	[Fact]
-	public void AddMediator_ObsoletePropertyGetter_ReturnsCorrectValue()
-	{
-		// Arrange
-		var options = new MediatorOptions();
-
-		// Act
-		options.StartupValidation = StartupValidation.Warn;
-
-		// Assert
-#pragma warning disable CS0618
-		options.ValidateHandlersAtStartup.Should().BeTrue();
-#pragma warning restore CS0618
-
-		// Act
-		options.StartupValidation = StartupValidation.None;
-
-		// Assert
-#pragma warning disable CS0618
-		options.ValidateHandlersAtStartup.Should().BeFalse();
-#pragma warning restore CS0618
 	}
 
 	[Fact]
@@ -345,11 +520,218 @@ public class StartupValidationTests
 		// Act - Even with FailFast, empty assemblies shouldn't cause issues
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = new[] { typeof(object).Assembly }; // mscorlib has no handlers
+			options.Assemblies = [typeof(object).Assembly]; // mscorlib has no handlers
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
 		// Assert
 		act.Should().NotThrow();
+	}
+
+	[Fact]
+	public void AddMediator_DuplicateHandlersWithWarn_LogsButDoesNotThrow()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler1>();
+		services.AddScoped<IQueryHandler<DuplicateHandlerQuery, string>, DuplicateQueryHandler2>();
+		services.AddScoped<IMediator, Mediator>();
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [typeof(StartupValidationTests).Assembly],
+			StartupValidation = StartupValidation.Warn
+		};
+		services.AddSingleton(options);
+
+		// Act - Warn mode should not throw, just log
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		act.Should().NotThrow();
+	}
+}
+
+/// <summary>
+/// Integration tests for startup validation behavior.
+/// </summary>
+public class StartupValidationIntegrationTests
+{
+	public record ValidQuery(int Id) : IQuery<string>;
+	public record ValidCommand(string Name) : ICommand;
+	public record ValidStreamQuery(int Count) : IStreamQuery<int>;
+
+	public class ValidQueryHandler : IQueryHandler<ValidQuery, string>
+	{
+		public Task<string> Handle(ValidQuery query, CancellationToken cancellationToken)
+		{
+			return Task.FromResult($"Result: {query.Id}");
+		}
+	}
+
+	public class ValidCommandHandler : ICommandHandler<ValidCommand>
+	{
+		public Task Handle(ValidCommand command, CancellationToken cancellationToken)
+		{
+			return Task.CompletedTask;
+		}
+	}
+
+	public class ValidStreamQueryHandler : IStreamQueryHandler<ValidStreamQuery, int>
+	{
+		public async IAsyncEnumerable<int> Handle(
+			ValidStreamQuery query,
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+		{
+			for (int i = 1; i <= query.Count; i++)
+			{
+				await Task.Delay(1, cancellationToken);
+				yield return i;
+			}
+		}
+	}
+
+	[Theory]
+	[InlineData(StartupValidation.None)]
+	[InlineData(StartupValidation.Warn)]
+	[InlineData(StartupValidation.FailFast)]
+	public async Task RuntimeExecution_WithValidHandlers_WorksRegardlessOfValidationMode(StartupValidation mode)
+	{
+		// Arrange
+		var sourceCode = @"
+        using System;
+        using System.Collections.Generic;
+        using System.Threading;
+        using System.Threading.Tasks;
+        
+        public record ValidQuery(int Id) : EasyDispatch.IQuery<string>;
+        public record ValidCommand(string Name) : EasyDispatch.ICommand;
+        public record ValidStreamQuery(int Count) : EasyDispatch.IStreamQuery<int>;
+
+        public class ValidQueryHandler : EasyDispatch.IQueryHandler<ValidQuery, string>
+        {
+            public Task<string> Handle(ValidQuery query, CancellationToken cancellationToken)
+            {
+                return Task.FromResult($""Result: {query.Id}"");
+            }
+        }
+
+        public class ValidCommandHandler : EasyDispatch.ICommandHandler<ValidCommand>
+        {
+            public Task Handle(ValidCommand command, CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        public class ValidStreamQueryHandler : EasyDispatch.IStreamQueryHandler<ValidStreamQuery, int>
+        {
+            public async IAsyncEnumerable<int> Handle(
+                ValidStreamQuery query,
+                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+            {
+                for (int i = 1; i <= query.Count; i++)
+                {
+                    await Task.Delay(1, cancellationToken);
+                    yield return i;
+                }
+            }
+        }
+    ";
+
+		var easyDispatchAssembly = typeof(IQuery<>).Assembly;
+
+		var references = new[]
+		{
+			MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+			MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
+			MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
+			MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.AsyncIteratorMethodBuilder).Assembly.Location),
+			MetadataReference.CreateFromFile(typeof(IAsyncEnumerable<>).Assembly.Location),
+			MetadataReference.CreateFromFile(easyDispatchAssembly.Location),
+			MetadataReference.CreateFromFile(Assembly.Load("netstandard, Version=2.0.0.0").Location),
+			MetadataReference.CreateFromFile(Assembly.Load("System.Runtime, Version=4.2.2.0").Location)
+		};
+
+		var compilation = CSharpCompilation.Create("DynamicAssembly")
+			.WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
+			.AddReferences(references)
+			.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sourceCode));
+
+		using var ms = new MemoryStream();
+		var result = compilation.Emit(ms);
+
+		if (!result.Success)
+		{
+			var errors = string.Join(Environment.NewLine, result.Diagnostics);
+			Assert.Fail($"Compilation failed:{Environment.NewLine}{errors}");
+		}
+
+		var dynamicAssembly = Assembly.Load(ms.ToArray());
+
+		var services = new ServiceCollection();
+		services.AddMediator(options =>
+		{
+			options.Assemblies = [dynamicAssembly];
+			options.StartupValidation = mode;
+		});
+
+		using var provider = services.BuildServiceProvider();
+		var mediator = provider.GetRequiredService<IMediator>();
+
+		// Create instances using reflection since types are dynamic
+		var validQueryType = dynamicAssembly.GetType("ValidQuery");
+		var validCommandType = dynamicAssembly.GetType("ValidCommand");
+		var validStreamQueryType = dynamicAssembly.GetType("ValidStreamQuery");
+
+		var queryInstance = Activator.CreateInstance(validQueryType, 42);
+		var commandInstance = Activator.CreateInstance(validCommandType, "test");
+		var streamQueryInstance = Activator.CreateInstance(validStreamQueryType, 3);
+
+		// Alternative Act section using dynamic
+		dynamic dynamicMediator = mediator;
+
+		// Query
+		var queryResult = await dynamicMediator.SendAsync((dynamic)queryInstance);
+
+		// Command  
+		await dynamicMediator.SendAsync((dynamic)commandInstance);
+
+		// Stream
+		var streamResults = new List<int>();
+		var asyncEnumerable = dynamicMediator.StreamAsync((dynamic)streamQueryInstance) as IAsyncEnumerable<int>;
+		await foreach (var item in asyncEnumerable)
+		{
+			streamResults.Add(item);
+		}
+
+		// Assert
+		(queryResult as string).Should().Be("Result: 42");
+		streamResults.Should().Equal(1, 2, 3);
+	}
+
+	[Fact]
+	public void Startup_WithFailFast_PreventsApplicationStartup()
+	{
+		// Arrange - Create a scenario that would fail in production startup
+
+		// Act
+		var act = () =>
+		{
+			var services = new ServiceCollection();
+			services.AddMediator(options =>
+			{
+				options.Assemblies = [typeof(StartupValidationTests).Assembly];
+				options.StartupValidation = StartupValidation.FailFast;
+			});
+
+			// This would be called during app startup
+			services.BuildServiceProvider();
+		};
+
+		// Assert - Application should fail to start
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*startup validation failed*");
 	}
 }

@@ -20,17 +20,16 @@ public static class ServiceCollectionExtensions
 		this IServiceCollection services,
 		Action<MediatorOptions> configure)
 	{
-		if (services == null)
-			throw new ArgumentNullException(nameof(services));
+		ArgumentNullException.ThrowIfNull(services);
 
-		if (configure == null)
-			throw new ArgumentNullException(nameof(configure));
+		ArgumentNullException.ThrowIfNull(configure);
 
 		var options = new MediatorOptions();
 		configure(options);
 
-		if (options.Assemblies == null || options.Assemblies.Length == 0)
-			throw new ArgumentException("At least one assembly must be provided in MediatorOptions", nameof(configure));
+		if ((options.Assemblies == null || options.Assemblies.Length == 0) &&
+			(options.HandlerTypes == null || options.HandlerTypes.Length == 0))
+			throw new ArgumentException("At least one assembly or handler type must be provided in MediatorOptions", nameof(configure));
 
 		// Register options as singleton
 		services.AddSingleton(options);
@@ -38,8 +37,14 @@ public static class ServiceCollectionExtensions
 		// Register the mediator itself as scoped
 		services.AddScoped<IMediator, Mediator>();
 
+		// Get all the explicit types and those in the specified assemblies
+		var handlerTypes = new List<Type>(options.HandlerTypes);
+		handlerTypes.AddRange((options.Assemblies ?? [])
+					.SelectMany(a => a.GetTypes())
+					.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition));
+
 		// Scan and register all handlers from the specified assemblies
-		RegisterHandlers(services, options.Assemblies, options.HandlerLifetime);
+		RegisterHandlers(services, handlerTypes, options.HandlerLifetime);
 
 		// Perform startup validation if configured
 		StartupValidator.ValidateHandlers(services, options);
@@ -57,8 +62,7 @@ public static class ServiceCollectionExtensions
 		this IServiceCollection services,
 		params Assembly[] assemblies)
 	{
-		if (services == null)
-			throw new ArgumentNullException(nameof(services));
+		ArgumentNullException.ThrowIfNull(services);
 
 		if (assemblies == null || assemblies.Length == 0)
 			throw new ArgumentException("At least one assembly must be provided", nameof(assemblies));
@@ -70,8 +74,13 @@ public static class ServiceCollectionExtensions
 		// Register the mediator itself as scoped
 		services.AddScoped<IMediator, Mediator>();
 
+		var handlerTypes = assemblies
+					.SelectMany(a => a.GetTypes())
+					.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+					.ToList();
+
 		// Scan and register all handlers from the specified assemblies
-		RegisterHandlers(services, assemblies, options.HandlerLifetime);
+		RegisterHandlers(services, handlerTypes, options.HandlerLifetime);
 
 		// Perform startup validation if configured
 		StartupValidator.ValidateHandlers(services, options);
@@ -90,14 +99,9 @@ public static class ServiceCollectionExtensions
 
 	private static void RegisterHandlers(
 		IServiceCollection services,
-		Assembly[] assemblies,
+		List<Type> handlerTypes,
 		ServiceLifetime lifetime)
 	{
-		var handlerTypes = assemblies
-			.SelectMany(a => a.GetTypes())
-			.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
-			.ToList();
-
 		// Register Query Handlers: IQueryHandler<TQuery, TResponse>
 		RegisterHandlersOfType(
 			services,
@@ -134,7 +138,6 @@ public static class ServiceCollectionExtensions
 			typeof(INotificationHandler<>),
 			lifetime);
 	}
-
 	private static void RegisterHandlersOfType(
 		IServiceCollection services,
 		List<Type> candidateTypes,
@@ -218,8 +221,7 @@ internal sealed class MediatorBuilder : IMediatorBuilder
 
 	public IMediatorBuilder AddOpenBehavior(Type openBehaviorType)
 	{
-		if (openBehaviorType == null)
-			throw new ArgumentNullException(nameof(openBehaviorType));
+		ArgumentNullException.ThrowIfNull(openBehaviorType);
 
 		if (!openBehaviorType.IsGenericTypeDefinition)
 			throw new ArgumentException("Type must be an open generic type", nameof(openBehaviorType));
@@ -242,8 +244,7 @@ internal sealed class MediatorBuilder : IMediatorBuilder
 	public IMediatorBuilder AddBehavior<TMessage, TResponse>(
 		IPipelineBehavior<TMessage, TResponse> behaviorInstance)
 	{
-		if (behaviorInstance == null)
-			throw new ArgumentNullException(nameof(behaviorInstance));
+		ArgumentNullException.ThrowIfNull(behaviorInstance);
 
 		Services.AddSingleton(behaviorInstance);
 		return this;
@@ -258,8 +259,7 @@ internal sealed class MediatorBuilder : IMediatorBuilder
 
 	public IMediatorBuilder AddOpenStreamBehavior(Type openBehaviorType)
 	{
-		if (openBehaviorType == null)
-			throw new ArgumentNullException(nameof(openBehaviorType));
+		ArgumentNullException.ThrowIfNull(openBehaviorType);
 
 		if (!openBehaviorType.IsGenericTypeDefinition)
 			throw new ArgumentException("Type must be an open generic type", nameof(openBehaviorType));
@@ -282,8 +282,7 @@ internal sealed class MediatorBuilder : IMediatorBuilder
 	public IMediatorBuilder AddStreamBehavior<TQuery, TResult>(
 		IStreamPipelineBehavior<TQuery, TResult> behaviorInstance)
 	{
-		if (behaviorInstance == null)
-			throw new ArgumentNullException(nameof(behaviorInstance));
+		ArgumentNullException.ThrowIfNull(behaviorInstance);
 
 		Services.AddSingleton(behaviorInstance);
 		return this;

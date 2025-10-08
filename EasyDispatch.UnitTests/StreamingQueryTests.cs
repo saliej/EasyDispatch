@@ -333,7 +333,7 @@ public class StreamingBehaviorTests
 
 	public class LoggingStreamBehavior<TQuery, TResult> : IStreamPipelineBehavior<TQuery, TResult>
 	{
-		public List<string> Logs { get; } = new();
+		public List<string> Logs { get; } = [];
 
 		public async IAsyncEnumerable<TResult> Handle(
 			TQuery query,
@@ -362,7 +362,7 @@ public class StreamingBehaviorTests
 			await foreach (var item in next().WithCancellation(cancellationToken))
 			{
 				// Filter out items containing "3"
-				if (!item.Contains("3"))
+				if (!item.Contains('3'))
 				{
 					yield return item;
 				}

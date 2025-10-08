@@ -20,9 +20,13 @@ internal static class StartupValidator
 		if (options.StartupValidation == StartupValidation.None)
 			return;
 
+		if (options.Assemblies == null || options.Assemblies.Length == 0)
+			throw new InvalidOperationException("No assemblies specified for scanning. " +
+				"Set MediatorOptions.Assemblies to the assemblies containing your message types.");
+
 		var validationResults = PerformValidation(services, options.Assemblies);
 
-		if (!validationResults.Any())
+		if (validationResults.Count == 0)
 			return;
 
 		switch (options.StartupValidation)
@@ -48,63 +52,7 @@ internal static class StartupValidator
 			.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
 			.ToList();
 
-		ValidateQueries(services, results, messageTypes);
-		ValidateVoidCommands(services, results, messageTypes);
-		ValidateCommandsWithResponse(services, results, messageTypes);
-
-		// Note: Notifications are NOT validated as they can have zero or multiple handlers
-		// This is by design for the pub/sub pattern
-
-		return results;
-	}
-
-	private static void ValidateCommandsWithResponse(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
-	{
-		var commandsWithResponse = messageTypes
-			.Where(t => t.GetInterfaces()
-				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>)))
-			.ToList();
-
-		foreach (var command in commandsWithResponse)
-		{
-			var commandInterface = command.GetInterfaces()
-				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>));
-
-			var responseType = commandInterface.GetGenericArguments()[0];
-			var handlerType = typeof(ICommandHandler<,>).MakeGenericType(command, responseType);
-
-			if (!IsHandlerRegistered(services, handlerType))
-			{
-				results.Add(new ValidationResult(
-					command,
-					handlerType,
-					"Command"));
-			}
-		}
-	}
-
-	private static void ValidateVoidCommands(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
-	{
-		var voidCommands = messageTypes
-			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
-			.ToList();
-
-		foreach (var command in voidCommands)
-		{
-			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
-
-			if (!IsHandlerRegistered(services, handlerType))
-			{
-				results.Add(new ValidationResult(
-					command,
-					handlerType,
-					"Command (void)"));
-			}
-		}
-	}
-
-	private static void ValidateQueries(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
-	{
+		// Validate queries
 		var queries = messageTypes
 			.Where(t => t.GetInterfaces()
 				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
@@ -118,14 +66,131 @@ internal static class StartupValidator
 			var responseType = queryInterface.GetGenericArguments()[0];
 			var handlerType = typeof(IQueryHandler<,>).MakeGenericType(query, responseType);
 
-			if (!IsHandlerRegistered(services, handlerType))
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
 			{
 				results.Add(new ValidationResult(
 					query,
 					handlerType,
-					"Query"));
+					"Query",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"Query",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
 			}
 		}
+
+		// Validate streaming queries
+		var streamQueries = messageTypes
+			.Where(t => t.GetInterfaces()
+				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>)))
+			.ToList();
+
+		foreach (var query in streamQueries)
+		{
+			var queryInterface = query.GetInterfaces()
+				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>));
+
+			var resultType = queryInterface.GetGenericArguments()[0];
+			var handlerType = typeof(IStreamQueryHandler<,>).MakeGenericType(query, resultType);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"StreamQuery",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"StreamQuery",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+
+		// Validate void commands
+		var voidCommands = messageTypes
+			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
+			.ToList();
+
+		foreach (var command in voidCommands)
+		{
+			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command (void)",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command (void)",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+
+		// Validate commands with response
+		var commandsWithResponse = messageTypes
+			.Where(t => t.GetInterfaces()
+				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>)))
+			.ToList();
+
+		foreach (var command in commandsWithResponse)
+		{
+			var commandInterface = command.GetInterfaces()
+				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>));
+
+			var responseType = commandInterface.GetGenericArguments()[0];
+			var handlerType = typeof(ICommandHandler<,>).MakeGenericType(command, responseType);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+
+		// Note: Notifications are NOT validated as they can have zero or multiple handlers
+		// This is by design for the pub/sub pattern
+
+		return results;
 	}
 
 	private static bool IsHandlerRegistered(IServiceCollection services, Type handlerType)
@@ -133,19 +198,47 @@ internal static class StartupValidator
 		return services.Any(d => d.ServiceType == handlerType);
 	}
 
+	private static int CountHandlers(IServiceCollection services, Type handlerType)
+	{
+		return services.Count(d => d.ServiceType == handlerType);
+	}
+
 	private static void LogWarnings(List<ValidationResult> results, ILogger? logger)
 	{
-		logger?.LogWarning(
-			"EasyDispatch startup validation found {Count} message(s) without handlers:",
-			results.Count);
+		var missingHandlers = results.Where(r => r.Issue == ValidationIssue.MissingHandler).ToList();
+		var multipleHandlers = results.Where(r => r.Issue == ValidationIssue.MultipleHandlers).ToList();
 
-		foreach (var result in results)
+		if (missingHandlers.Count > 0)
 		{
 			logger?.LogWarning(
-				"  {MessageType} '{MessageName}' has no registered handler ({HandlerType})",
-				result.MessageCategory,
-				result.MessageType.Name,
-				result.ExpectedHandlerType.Name);
+				"EasyDispatch startup validation found {Count} message(s) without handlers:",
+				missingHandlers.Count);
+
+			foreach (var result in missingHandlers)
+			{
+				logger?.LogWarning(
+					"  {MessageType} '{MessageName}' has no registered handler ({HandlerType})",
+					result.MessageCategory,
+					result.MessageType.Name,
+					result.ExpectedHandlerType.Name);
+			}
+		}
+
+		if (multipleHandlers.Count > 0)
+		{
+			logger?.LogWarning(
+				"EasyDispatch startup validation found {Count} message(s) with multiple handlers:",
+				multipleHandlers.Count);
+
+			foreach (var result in multipleHandlers)
+			{
+				logger?.LogWarning(
+					"  {MessageType} '{MessageName}' has {Count} handlers registered (expected 1). " +
+					"Only the last registered handler will be used.",
+					result.MessageCategory,
+					result.MessageType.Name,
+					result.HandlerCount);
+			}
 		}
 
 		logger?.LogWarning(
@@ -155,24 +248,49 @@ internal static class StartupValidator
 
 	private static void ThrowValidationException(List<ValidationResult> results)
 	{
-		var errorMessages = results.Select(r =>
-			$"  - {r.MessageCategory} '{r.MessageType.FullName}' has no registered handler " +
-			$"(expected {r.ExpectedHandlerType.FullName})"
-		).ToList();
+		var missingHandlers = results.Where(r => r.Issue == ValidationIssue.MissingHandler).ToList();
+		var multipleHandlers = results.Where(r => r.Issue == ValidationIssue.MultipleHandlers).ToList();
+
+		var errorMessages = new List<string>();
+
+		if (missingHandlers.Count > 0)
+		{
+			errorMessages.Add($"\nMissing Handlers ({missingHandlers.Count}):");
+			errorMessages.AddRange(missingHandlers.Select(r =>
+				$"  - {r.MessageCategory} '{r.MessageType.FullName}' has no registered handler " +
+				$"(expected {r.ExpectedHandlerType.FullName})"));
+		}
+
+		if (multipleHandlers.Count > 0)
+		{
+			errorMessages.Add($"\nMultiple Handlers ({multipleHandlers.Count}):");
+			errorMessages.AddRange(multipleHandlers.Select(r =>
+				$"  - {r.MessageCategory} '{r.MessageType.FullName}' has {r.HandlerCount} handlers registered " +
+				$"(expected 1). Only the last registered handler will be used."));
+		}
 
 		var message =
-			$"EasyDispatch startup validation failed. {results.Count} message(s) have no registered handlers:\n" +
+			$"EasyDispatch startup validation failed. {results.Count} issue(s) found:" +
 			string.Join("\n", errorMessages) + "\n\n" +
 			"To fix this issue:\n" +
-			"  1. Register handlers for all messages in the assemblies provided to AddMediator()\n" +
-			"  2. Remove unused message types from the scanned assemblies\n" +
-			"  3. Set StartupValidation to None or Warn to allow startup without handlers";
+			"  1. Register exactly one handler for each query/command/stream query\n" +
+			"  2. Remove duplicate handler registrations\n" +
+			"  3. Remove unused message types from the scanned assemblies\n" +
+			"  4. Set StartupValidation to None or Warn to allow startup despite these issues";
 
 		throw new InvalidOperationException(message);
+	}
+
+	private enum ValidationIssue
+	{
+		MissingHandler,
+		MultipleHandlers
 	}
 
 	private record ValidationResult(
 		Type MessageType,
 		Type ExpectedHandlerType,
-		string MessageCategory);
+		string MessageCategory,
+		ValidationIssue Issue,
+		int HandlerCount = 0);
 }

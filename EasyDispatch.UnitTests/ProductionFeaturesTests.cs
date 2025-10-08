@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reflection;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -123,7 +124,7 @@ public class ProductionFeaturesTests
         var services = new ServiceCollection();
         services.AddMediator(options =>
         {
-            options.Assemblies = new[] { typeof(ProductionFeaturesTests).Assembly };
+            options.Assemblies = [typeof(ProductionFeaturesTests).Assembly];
             options.HandlerLifetime = ServiceLifetime.Singleton;
         });
 
@@ -144,8 +145,8 @@ public class ProductionFeaturesTests
         // Assert
         options.HandlerLifetime.Should().Be(ServiceLifetime.Scoped);
         options.NotificationPublishStrategy.Should().Be(NotificationPublishStrategy.StopOnFirstException);
-        options.ValidateHandlersAtStartup.Should().BeFalse();
-        options.Assemblies.Should().BeEmpty();
+        options.StartupValidation.Should().Be(StartupValidation.None);
+		options.Assemblies.Should().BeEmpty();
     }
 
     [Fact]
@@ -157,7 +158,7 @@ public class ProductionFeaturesTests
         // Act
         services.AddMediator(options =>
         {
-            options.Assemblies = new[] { typeof(ProductionFeaturesTests).Assembly };
+            options.Assemblies = [typeof(ProductionFeaturesTests).Assembly];
             options.HandlerLifetime = ServiceLifetime.Transient;
             options.NotificationPublishStrategy = NotificationPublishStrategy.ParallelWhenAll;
         });
@@ -209,7 +210,7 @@ public class ProductionFeaturesTests
     }
 
     [Fact]
-    public void AddMediator_MissingAssemblies_ThrowsException()
+    public void AddMediator_MissingAssemblies_And_Types_ThrowsException()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -217,11 +218,10 @@ public class ProductionFeaturesTests
         // Act
         var act = () => services.AddMediator(options =>
         {
-            options.Assemblies = [];
         });
 
         // Assert
         act.Should().Throw<ArgumentException>()
-            .WithMessage("*At least one assembly must be provided*");
+            .WithMessage("*At least one assembly or handler type must be provided in MediatorOptions*");
     }
 }

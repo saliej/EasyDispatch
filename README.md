@@ -1,53 +1,47 @@
-﻿# EasyDispatch
+# EasyDispatch
 
-A Mediator implementation for .NET that implements the CQRS and Mediator patterns that aims for ease-of-use, and a relatively simple migration path from Mediatr.
+A lightweight, simple Mediator library for .NET focused on ease-of-use and implementing the CQRS pattern.
 
-[![.NET 9.0](https://img.shields.io/badge/.NET-9.0-blue.svg)](https://dotnet.microsoft.com/download)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![NuGet](https://img.shields.io/nuget/v/EasyDispatch.svg)](https://www.nuget.org/packages/EasyDispatch/)
+[![Downloads](https://img.shields.io/nuget/dt/EasyDispatch.svg)](https://www.nuget.org/packages/EasyDispatch/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Features
 
-- **CQRS Support**: Separate interfaces for Commands, Queries, and Notifications
-- **Pipeline Behaviors**: Extensible middleware pipeline for cross-cutting concerns
-- **Flexible Notification Strategies**: Four built-in strategies for handling multiple notification handlers
-- **Dependency Injection**: First-class support for Microsoft.Extensions.DependencyInjection
-- **Minimal Dependencies**: Only depends on Microsoft.Extensions.DependencyInjection.Abstractions
+**Simple API** - Minimal boilerplate, intuitive API  
+**CQRS Support** - Clean separation of queries, commands, and notifications  
+**Streaming Queries** - Handle large datasets efficiently with `IAsyncEnumerable`  
+**Pipeline Behaviors** - Add cross-cutting concerns like logging and validation  
+**Polymorphic Dispatch** - Notifications handled by base class and interface handlers  
+**Startup Validation** - Catch missing handlers at application startup  
+**OpenTelemetry Support** - Built-in Activity tracing for observability  
 
 ## Installation
 
 ```bash
-# Via NuGet (when published)
 dotnet add package EasyDispatch
-
-# Or add to your .csproj
-<PackageReference Include="EasyDispatch" Version="1.0.x" />
 ```
 
 ## Quick Start
 
-### 1. Define Your Messages
+### 1. Register the Mediator
 
 ```csharp
-using EasyDispatch.Contracts;
+var builder = WebApplication.CreateBuilder(args);
 
-// Query - retrieves data
-public record GetUserQuery(int UserId) : IQuery<UserDto>;
+// Register mediator and scan assembly for handlers
+builder.Services.AddMediator(typeof(Program).Assembly);
 
-// Command - performs action, no return value
-public record DeleteUserCommand(int UserId) : ICommand;
-
-// Command - performs action, returns value
-public record CreateUserCommand(string Name, string Email) : ICommand<int>;
-
-// Notification - pub/sub event
-public record UserCreatedNotification(int UserId, string Name) : INotification;
+var app = builder.Build();
 ```
 
-### 2. Implement Handlers
+### 2. Define a Query and Handler
 
 ```csharp
-using EasyDispatch.Handlers;
+// Query
+public record GetUserQuery(int UserId) : IQuery<UserDto>;
 
+// Handler
 public class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserDto>
 {
     private readonly IUserRepository _repository;
@@ -63,522 +57,166 @@ public class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserDto>
         return new UserDto(user.Id, user.Name, user.Email);
     }
 }
-
-public class CreateUserCommandHandler : ICommandHandler<CreateUserCommand, int>
-{
-    private readonly IUserRepository _repository;
-
-    public async Task<int> Handle(CreateUserCommand command, CancellationToken cancellationToken)
-    {
-        var user = new User { Name = command.Name, Email = command.Email };
-        await _repository.AddAsync(user, cancellationToken);
-        return user.Id;
-    }
-}
-
-// Notification handlers - multiple handlers can exist
-public class SendWelcomeEmailHandler : INotificationHandler<UserCreatedNotification>
-{
-    public async Task Handle(UserCreatedNotification notification, CancellationToken cancellationToken)
-    {
-        // Send welcome email
-    }
-}
-
-public class AuditLogHandler : INotificationHandler<UserCreatedNotification>
-{
-    public async Task Handle(UserCreatedNotification notification, CancellationToken cancellationToken)
-    {
-        // Log to audit system
-    }
-}
 ```
 
-### 3. Register with DI
-
-```csharp
-using Microsoft.Extensions.DependencyInjection;
-
-var services = new ServiceCollection();
-
-// Simple registration - scans assembly for handlers
-services.AddMediator(typeof(Program).Assembly);
-
-// With configuration
-services.AddMediator(options =>
-{
-    options.Assemblies = new[] { typeof(Program).Assembly };
-    options.HandlerLifetime = ServiceLifetime.Scoped;
-    options.NotificationPublishStrategy = NotificationPublishStrategy.ContinueOnException;
-})
-.AddOpenBehavior(typeof(LoggingBehavior<,>))
-.AddOpenBehavior(typeof(ValidationBehavior<,>));
-```
-
-### 4. Use the Mediator
+### 3. Use the Mediator
 
 ```csharp
 public class UserController : ControllerBase
 {
     private readonly IMediator _mediator;
 
-    public UserController(IMediator mediator)
-    {
-        _mediator = mediator;
-    }
+    public UserController(IMediator mediator) => _mediator = mediator;
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetUser(int id)
+    public async Task<ActionResult<UserDto>> GetUser(int id)
     {
-        var user = await _mediator.SendAsync(new GetUserQuery(id));
+        var query = new GetUserQuery(id);
+        var user = await _mediator.SendAsync(query);
         return Ok(user);
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
-    {
-        var userId = await _mediator.SendAsync(
-            new CreateUserCommand(request.Name, request.Email));
-        
-        await _mediator.PublishAsync(new UserCreatedNotification(userId, request.Name));
-        
-        return CreatedAtAction(nameof(GetUser), new { id = userId }, userId);
-    }
-
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteUser(int id)
-    {
-        await _mediator.SendAsync(new DeleteUserCommand(id));
-        return NoContent();
     }
 }
 ```
 
-## Configuration Options
+## Message Types
 
-### MediatorOptions
-
+**Queries** - Read operations that return data
 ```csharp
-services.AddMediator(options =>
-{
-    // Required: Assemblies to scan for handlers
-    options.Assemblies = new[] 
-    { 
-        typeof(Program).Assembly,
-        typeof(HandlersAssembly).Assembly 
-    };
-
-    // Optional: Handler lifetime (default: Scoped)
-    options.HandlerLifetime = ServiceLifetime.Scoped;
-
-    // Optional: Notification publishing strategy (default: StopOnFirstException)
-    options.NotificationPublishStrategy = NotificationPublishStrategy.ParallelWhenAll;
-
-    // Optional: Validate handlers at startup (default: false)
-    options.ValidateHandlersAtStartup = false;
-});
+public record GetUserQuery(int UserId) : IQuery<UserDto>;
 ```
 
-## Notification Publishing Strategies
-
-EasyDispatch provides four strategies for handling multiple notification handlers:
-
-### StopOnFirstException (Default)
+**Commands** - Write operations that modify state
 ```csharp
-options.NotificationPublishStrategy = NotificationPublishStrategy.StopOnFirstException;
+public record CreateUserCommand(string Name, string Email) : ICommand<int>;
+public record DeleteUserCommand(int UserId) : ICommand;
 ```
-- Executes handlers sequentially
-- Stops on first exception
-- Maintains ordering guarantees
-- **Use for**: Critical operations where any failure should halt execution
 
-### ContinueOnException
+**Notifications** - Events with multiple handlers (pub/sub)
 ```csharp
-options.NotificationPublishStrategy = NotificationPublishStrategy.ContinueOnException;
+public record UserCreatedNotification(int UserId, string Name) : INotification;
 ```
-- Executes handlers sequentially
-- Continues on exceptions
-- Collects all exceptions as AggregateException
-- **Use for**: Logging, auditing where all handlers should attempt execution
 
-### ParallelWhenAll
+**Streaming Queries** - Large datasets returned incrementally
 ```csharp
-options.NotificationPublishStrategy = NotificationPublishStrategy.ParallelWhenAll;
+public record GetOrdersStreamQuery(int PageSize) : IStreamQuery<OrderDto>;
 ```
-- Executes handlers in parallel
-- Waits for all handlers to complete
-- Collects exceptions as AggregateException
-- **Use for**: Independent handlers that can run concurrently
-
-### ParallelNoWait
-```csharp
-options.NotificationPublishStrategy = NotificationPublishStrategy.ParallelNoWait;
-```
-- Fire-and-forget parallel execution
-- Returns immediately without waiting
-- Logs errors but doesn't throw to caller
-- **Use for**: Non-critical notifications, fire-and-forget events
 
 ## Pipeline Behaviors
 
-Pipeline behaviors are middleware that wrap handler execution, perfect for cross-cutting concerns.
-
-### Creating a Behavior
+Add cross-cutting concerns like logging, validation, and caching:
 
 ```csharp
-using EasyDispatch.Behaviors;
-
-public class LoggingBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-{
-    private readonly ILogger<LoggingBehavior<TMessage, TResponse>> _logger;
-
-    public LoggingBehavior(ILogger<LoggingBehavior<TMessage, TResponse>> logger)
-    {
-        _logger = logger;
-    }
-
-    public async Task<TResponse> Handle(
-        TMessage message,
-        Func<Task<TResponse>> next,
-        CancellationToken cancellationToken)
-    {
-        var messageName = typeof(TMessage).Name;
-        
-        _logger.LogInformation("Executing {MessageName}", messageName);
-        
-        try
-        {
-            var response = await next();
-            _logger.LogInformation("Executed {MessageName} successfully", messageName);
-            return response;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error executing {MessageName}", messageName);
-            throw;
-        }
-    }
-}
-```
-
-### Registering Behaviors
-
-```csharp
-// Open generic - applies to all messages
-services.AddMediator(typeof(Program).Assembly)
+builder.Services.AddMediator(typeof(Program).Assembly)
     .AddOpenBehavior(typeof(LoggingBehavior<,>))
     .AddOpenBehavior(typeof(ValidationBehavior<,>))
     .AddOpenBehavior(typeof(PerformanceBehavior<,>));
-
-// Specific message type
-services.AddMediator(typeof(Program).Assembly)
-    .AddBehavior<CreateUserCommand, int, TransactionBehavior>();
 ```
 
-### Common Behavior Examples
+## Configuration
 
-#### Validation Behavior (FluentValidation)
 ```csharp
-public class ValidationBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
+builder.Services.AddMediator(options =>
 {
-    private readonly IEnumerable<IValidator<TMessage>> _validators;
-
-    public ValidationBehavior(IEnumerable<IValidator<TMessage>> validators)
-    {
-        _validators = validators;
-    }
-
-    public async Task<TResponse> Handle(
-        TMessage message,
-        Func<Task<TResponse>> next,
-        CancellationToken cancellationToken)
-    {
-        if (!_validators.Any())
-            return await next();
-
-        var context = new ValidationContext<TMessage>(message);
-        var validationResults = await Task.WhenAll(
-            _validators.Select(v => v.ValidateAsync(context, cancellationToken)));
-
-        var failures = validationResults
-            .SelectMany(r => r.Errors)
-            .Where(f => f != null)
-            .ToList();
-
-        if (failures.Count != 0)
-            throw new ValidationException(failures);
-
-        return await next();
-    }
-}
-```
-
-#### Performance Monitoring
-```csharp
-public class PerformanceBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-{
-    private readonly ILogger<PerformanceBehavior<TMessage, TResponse>> _logger;
-    private readonly Stopwatch _timer;
-
-    public PerformanceBehavior(ILogger<PerformanceBehavior<TMessage, TResponse>> logger)
-    {
-        _logger = logger;
-        _timer = new Stopwatch();
-    }
-
-    public async Task<TResponse> Handle(
-        TMessage message,
-        Func<Task<TResponse>> next,
-        CancellationToken cancellationToken)
-    {
-        _timer.Start();
-        var response = await next();
-        _timer.Stop();
-
-        var elapsedMilliseconds = _timer.ElapsedMilliseconds;
-        if (elapsedMilliseconds > 500)
-        {
-            _logger.LogWarning(
-                "Long Running Request: {MessageName} ({ElapsedMilliseconds} ms)",
-                typeof(TMessage).Name,
-                elapsedMilliseconds);
-        }
-
-        return response;
-    }
-}
-```
-
-#### Authorization
-```csharp
-public class AuthorizationBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-{
-    private readonly ICurrentUserService _currentUserService;
-    private readonly IAuthorizationService _authorizationService;
-
-    public async Task<TResponse> Handle(
-        TMessage message,
-        Func<Task<TResponse>> next,
-        CancellationToken cancellationToken)
-    {
-        var authorizeAttributes = typeof(TMessage)
-            .GetCustomAttributes(typeof(AuthorizeAttribute), true)
-            .Cast<AuthorizeAttribute>()
-            .ToList();
-
-        if (!authorizeAttributes.Any())
-            return await next();
-
-        var currentUser = _currentUserService.GetCurrentUser();
-        if (currentUser == null)
-            throw new UnauthorizedException();
-
-        foreach (var attribute in authorizeAttributes)
-        {
-            var authorized = await _authorizationService.AuthorizeAsync(
-                currentUser, 
-                attribute.Policy);
-            
-            if (!authorized)
-                throw new ForbiddenException($"Access denied: {attribute.Policy}");
-        }
-
-        return await next();
-    }
-}
-```
-
-## Unit Type for Void Operations
-
-EasyDispatch uses the `Unit` type internally to represent void operations in pipeline behaviors:
-
-```csharp
-// Void commands use Unit in behaviors
-public class LoggingBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-{
-    public async Task<TResponse> Handle(
-        TMessage message,
-        Func<Task<TResponse>> next,
-        CancellationToken cancellationToken)
-    {
-        // Works for both void and non-void commands
-        return await next();
-    }
-}
-```
-
-This allows a single behavior implementation to work across all message types.
-
-## Architecture
-
-### Message Types
-
-```
-IQuery<TResponse>          - Retrieves data, no side effects
-ICommand                   - Performs action, void return
-ICommand<TResponse>        - Performs action, returns value
-INotification              - Pub/sub event, multiple handlers
-```
-
-### Handler Types
-
-```
-IQueryHandler<TQuery, TResponse>              - Handles queries
-ICommandHandler<TCommand>                     - Handles void commands
-ICommandHandler<TCommand, TResponse>          - Handles commands with response
-INotificationHandler<TNotification>           - Handles notifications
-```
-
-### Pipeline
-
-```
-Request → [Behavior 1] → [Behavior 2] → [Behavior N] → Handler → Response
-```
-
-## Error Handling
-
-EasyDispatch provides clear, actionable error messages:
-
-### Missing Handler
-
-```
-No handler registered for query 'GetUserQuery'.
-Expected a handler implementing IQueryHandler<GetUserQuery, UserDto>.
-Did you forget to call AddMediator() with the assembly containing your handlers?
-```
-
-### Notification Failures
-
-Depending on your strategy:
-- **StopOnFirstException**: Throws first exception immediately
-- **ContinueOnException**: Collects all exceptions in `AggregateException`
-- **ParallelWhenAll**: Collects all parallel exceptions in `AggregateException`
-- **ParallelNoWait**: Logs errors, doesn't throw
-
-## Distributed Tracing
-
-EasyDispatch includes built-in support for distributed tracing using `System.Diagnostics.Activity` and OpenTelemetry.
-
-### ActivitySource Versioning
-
-The ActivitySource version **automatically syncs with the package version**. When you update the package, the tracing version updates too:
-
-```xml
-<!-- In EasyDispatch.csproj -->
-<Version>1.0.4</Version>
-<!-- ActivitySource.Version will be "1.0.4" -->
-```
-
-This helps with:
-- **Version filtering** in OpenTelemetry collectors
-- **Breaking change identification** when upgrading
-- **Debugging** version-specific issues
-
-See the ActivitySource Versioning Guide for details on when to bump versions.
-
-### Automatic Activity Creation
-
-Every query, command, and notification automatically creates an Activity with:
-- **Fully qualified names**: `MyApp.NameSpace.GetUserQuery`, `MyApp.NameSpace.CreateUserCommand`, etc.
-- **Tags**: Message type, response type, handler type, behavior count
-- **Status**: Success (Ok) or error with exception details
-- **Exception events**: Full exception information for failed operations
-
-### OpenTelemetry Integration
-
-```csharp
-// Add OpenTelemetry to your application
-services.AddOpenTelemetry()
-    .WithTracing(builder => builder
-        .AddSource("EasyDispatch")  // Subscribe to EasyDispatch activities
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter());  // Or Jaeger, Zipkin, etc.
-```
-
-### Activity Tags
-
-Each activity includes the following tags:
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `easydispatch.operation` | Type of operation | `Query`, `Command`, `Notification` |
-| `easydispatch.message_type` | Full type name of message | `MyApp.GetUserQuery` |
-| `easydispatch.response_type` | Response type | `System.String`, `void` |
-| `easydispatch.handler_type` | Handler implementation type | `MyApp.GetUserQueryHandler` |
-| `easydispatch.behavior_count` | Number of behaviors (as string) | `"3"` |
-| `easydispatch.handler_count` | Notification handlers (as string, notifications only) | `"2"` |
-| `easydispatch.publish_strategy` | Strategy used (notifications only) | `ParallelWhenAll` |
-
-### Example Trace Output
-
-```
-EasyDispatch.Query.GetUserQuery (5.2ms)
-  ├─ easydispatch.operation: Query
-  ├─ easydispatch.message_type: MyApp.Queries.GetUserQuery
-  ├─ easydispatch.response_type: MyApp.DTOs.UserDto
-  ├─ easydispatch.handler_type: MyApp.Handlers.GetUserQueryHandler
-  └─ easydispatch.behavior_count: 2
-```
-
-### Custom ActivityListener
-
-For advanced scenarios, you can create a custom `ActivityListener`:
-
-```csharp
-var listener = new ActivityListener
-{
-    ShouldListenTo = source => source.Name == "EasyDispatch",
-    Sample = (ref ActivityCreationOptions<ActivityContext> _) => 
-        ActivitySamplingResult.AllDataAndRecorded,
-    ActivityStopped = activity =>
-    {
-        Console.WriteLine($"Operation: {activity.DisplayName}");
-        Console.WriteLine($"Duration: {activity.Duration.TotalMilliseconds}ms");
-        Console.WriteLine($"Status: {activity.Status}");
-    }
-};
-ActivitySource.AddActivityListener(listener);
-```
-
-
-## Configuration Options
-
-```csharp
-services.AddMediator(options =>
-{
+    // Assemblies to scan
     options.Assemblies = new[] { typeof(Program).Assembly };
-    options.HandlerLifetime = ServiceLifetime.Scoped;  // Default
-    options.NotificationPublishStrategy = NotificationPublishStrategy.StopOnFirstException;
+    
+    // Handler lifetime (default: Scoped)
+    options.HandlerLifetime = ServiceLifetime.Scoped;
+    
+    // Notification strategy (default: StopOnFirstException)
+    options.NotificationPublishStrategy = NotificationPublishStrategy.ParallelWhenAll;
+    
+    // Startup validation (default: None)
+    options.StartupValidation = StartupValidation.FailFast;
 });
 ```
 
-## Performance
+## Documentation
 
-- Reflection results are cached for minimal overhead
-- Scoped handler lifetime by default (configurable)
-- Optimized for high-throughput scenarios
-- Minimal allocations in hot paths
+**[Goto Wiki](../../wiki)**
 
-- ### Migration from MediatR
+## Examples
 
-EasyDispatch uses a very similar API to MediatR, making migration straightforward:
+### Command with Response
 
 ```csharp
-// MediatR
-public record GetUserQuery(int Id) : IRequest<UserDto>;
-public class GetUserQueryHandler : IRequestHandler<GetUserQuery, UserDto> { }
+public record CreateOrderCommand(
+    int CustomerId,
+    List<OrderItem> Items
+) : ICommand<int>;
 
-// EasyDispatch
-public record GetUserQuery(int Id) : IQuery<UserDto>;
-public class GetUserQueryHandler : IQueryHandler<GetUserQuery, UserDto> { }
+public class CreateOrderCommandHandler : ICommandHandler<CreateOrderCommand, int>
+{
+    public async Task<int> Handle(CreateOrderCommand command, CancellationToken ct)
+    {
+        var order = new Order { CustomerId = command.CustomerId, Items = command.Items };
+        await _repository.AddAsync(order, ct);
+        return order.Id;
+    }
+}
+
+// Usage
+var command = new CreateOrderCommand(customerId: 123, items);
+int orderId = await mediator.SendAsync(command);
 ```
 
-Main differences:
-- `IRequest<T>` → `IQuery<T>` or `ICommand<T>`
-- `IRequestHandler<,>` → `IQueryHandler<,>` or `ICommandHandler<,>`
-- Additional notification strategies
+### Notifications with Multiple Handlers
+
+```csharp
+public record UserCreatedNotification(int UserId, string Email) : INotification;
+
+// Handler 1: Send welcome email
+public class SendWelcomeEmailHandler : INotificationHandler<UserCreatedNotification>
+{
+    public async Task Handle(UserCreatedNotification notification, CancellationToken ct)
+    {
+        await _emailService.SendWelcomeEmailAsync(notification.Email, ct);
+    }
+}
+
+// Handler 2: Update analytics
+public class UpdateAnalyticsHandler : INotificationHandler<UserCreatedNotification>
+{
+    public async Task Handle(UserCreatedNotification notification, CancellationToken ct)
+    {
+        await _analyticsService.TrackUserCreatedAsync(notification.UserId, ct);
+    }
+}
+
+// Usage - both handlers execute
+await mediator.PublishAsync(new UserCreatedNotification(userId, email));
+```
+
+### Streaming Large Datasets
+
+```csharp
+public record GetOrdersStreamQuery() : IStreamQuery<OrderDto>;
+
+public class GetOrdersStreamQueryHandler : IStreamQueryHandler<GetOrdersStreamQuery, OrderDto>
+{
+    public async IAsyncEnumerable<OrderDto> Handle(
+        GetOrdersStreamQuery query,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var order in _repository.StreamAllOrdersAsync(ct))
+        {
+            yield return new OrderDto(order.Id, order.Total);
+        }
+    }
+}
+
+// Usage - process items as they arrive
+await foreach (var order in mediator.StreamAsync(new GetOrdersStreamQuery()))
+{
+    Console.WriteLine($"Order {order.Id}: ${order.Total}");
+}
+```
+
+## Requirements
+
+- .NET 9.0 or later
+- Microsoft.Extensions.DependencyInjection 9.0+
 
 ## License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

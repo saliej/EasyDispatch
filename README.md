@@ -1,6 +1,6 @@
 # EasyDispatch
 
-A lightweight, high-performance Mediator library for .NET focused on ease-of-use and implementing the CQRS pattern.
+A lightweight, simple Mediator library for .NET focused on ease-of-use and implementing the CQRS pattern.
 
 [![NuGet](https://img.shields.io/nuget/v/EasyDispatch.svg)](https://www.nuget.org/packages/EasyDispatch/)
 [![Downloads](https://img.shields.io/nuget/dt/EasyDispatch.svg)](https://www.nuget.org/packages/EasyDispatch/)

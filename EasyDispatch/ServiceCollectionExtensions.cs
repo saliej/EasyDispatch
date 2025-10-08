@@ -41,7 +41,9 @@ public static class ServiceCollectionExtensions
         // Scan and register all handlers from the specified assemblies
         RegisterHandlers(services, options.Assemblies, options.HandlerLifetime);
 
-        return new MediatorBuilder(services);
+		StartupValidator.ValidateHandlers(services, options);
+
+		return new MediatorBuilder(services);
     }
 
     /// <summary>
@@ -70,7 +72,9 @@ public static class ServiceCollectionExtensions
         // Scan and register all handlers from the specified assemblies
         RegisterHandlers(services, assemblies, options.HandlerLifetime);
 
-        return new MediatorBuilder(services);
+		StartupValidator.ValidateHandlers(services, options);
+
+		return new MediatorBuilder(services);
     }
 
     /// <summary>

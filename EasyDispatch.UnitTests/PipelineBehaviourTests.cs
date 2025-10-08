@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace EasyDispatch.UnitTests;
 

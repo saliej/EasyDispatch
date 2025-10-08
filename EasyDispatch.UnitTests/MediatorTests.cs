@@ -1,6 +1,6 @@
 ﻿using System;
 using Microsoft.Extensions.DependencyInjection;
-using FluentAssertions;
+using AwesomeAssertions;
 using NSubstitute;
 
 namespace EasyDispatch.UnitTests;

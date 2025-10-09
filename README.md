@@ -133,7 +133,7 @@ builder.Services.AddMediator(options =>
 
 ## Documentation
 
-**[Goto Wiki](../../wiki)**
+**[Wiki](../../wiki)**
 
 ## Examples
 

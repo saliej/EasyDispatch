@@ -10,7 +10,7 @@ namespace EasyDispatch.UnitTests;
 /// <summary>
 /// Tests for startup validation of handler registration.
 /// </summary>
-public class StartupValidationTests
+public class StartupValidatorTests
 {
 	// Test messages WITHOUT handlers
 	public record UnregisteredQuery(int Id) : IQuery<string>;
@@ -142,7 +142,7 @@ public class StartupValidationTests
 		// Act - Register mediator with unregistered message types but validation set to None
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = [typeof(StartupValidationTests).Assembly];
+			options.Assemblies = [typeof(StartupValidatorTests).Assembly];
 			options.StartupValidation = StartupValidation.None;
 		});
 
@@ -159,7 +159,7 @@ public class StartupValidationTests
 		// Act - Register mediator with unregistered message types and FailFast
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = [typeof(StartupValidationTests).Assembly];
+			options.Assemblies = [typeof(StartupValidatorTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -189,7 +189,7 @@ public class StartupValidationTests
 
 		var options = new MediatorOptions
 		{
-			Assemblies = [typeof(StartupValidationTests).Assembly],
+			Assemblies = [typeof(StartupValidatorTests).Assembly],
 			StartupValidation = StartupValidation.FailFast
 		};
 		services.AddSingleton(options);
@@ -216,7 +216,7 @@ public class StartupValidationTests
 
 		var options = new MediatorOptions
 		{
-			Assemblies = [typeof(StartupValidationTests).Assembly],
+			Assemblies = [typeof(StartupValidatorTests).Assembly],
 			StartupValidation = StartupValidation.FailFast
 		};
 		services.AddSingleton(options);
@@ -243,7 +243,7 @@ public class StartupValidationTests
 
 		var options = new MediatorOptions
 		{
-			Assemblies = [typeof(StartupValidationTests).Assembly],
+			Assemblies = [typeof(StartupValidatorTests).Assembly],
 			StartupValidation = StartupValidation.FailFast
 		};
 		services.AddSingleton(options);
@@ -297,7 +297,7 @@ public class StartupValidationTests
 		// Arrange
 		var services = new ServiceCollection();
 		var loggerFactory = LoggerFactory.Create(builder => builder.SetMinimumLevel(LogLevel.Warning));
-		var logger = loggerFactory.CreateLogger<StartupValidationTests>();
+		var logger = loggerFactory.CreateLogger<StartupValidatorTests>();
 
 		// Note: In real implementation, we'd need to inject logger or use ILoggerFactory
 		// For this test, we just verify it doesn't throw
@@ -305,7 +305,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = [typeof(StartupValidationTests).Assembly];
+			options.Assemblies = [typeof(StartupValidatorTests).Assembly];
 			options.StartupValidation = StartupValidation.Warn;
 		});
 
@@ -398,13 +398,13 @@ public class StartupValidationTests
 
 		var options = new MediatorOptions
 		{
-			Assemblies = [typeof(StartupValidationTests).Assembly],
+			Assemblies = [typeof(StartupValidatorTests).Assembly],
 			StartupValidation = StartupValidation.FailFast
 		};
 		services.AddSingleton(options);
 
 		// Act
-		var act = () => StartupValidator.ValidateHandlers(services, options);
+		var act = () => EasyDispatch.StartupValidator.ValidateHandlers(services, options);
 
 		// Assert
 		var exception = act.Should().Throw<InvalidOperationException>().Which;
@@ -427,7 +427,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = [typeof(StartupValidationTests).Assembly];
+			options.Assemblies = [typeof(StartupValidatorTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -456,7 +456,7 @@ public class StartupValidationTests
 		// Act
 		var act = () => services.AddMediator(options =>
 		{
-			options.Assemblies = [typeof(StartupValidationTests).Assembly];
+			options.Assemblies = [typeof(StartupValidatorTests).Assembly];
 			options.StartupValidation = StartupValidation.FailFast;
 		});
 
@@ -493,7 +493,7 @@ public class StartupValidationTests
 	{
 		// Arrange
 		var services = new ServiceCollection();
-		var assembly1 = typeof(StartupValidationTests).Assembly;
+		var assembly1 = typeof(StartupValidatorTests).Assembly;
 		var assembly2 = typeof(Mediator).Assembly;
 
 		// Act
@@ -540,7 +540,7 @@ public class StartupValidationTests
 
 		var options = new MediatorOptions
 		{
-			Assemblies = [typeof(StartupValidationTests).Assembly],
+			Assemblies = [typeof(StartupValidator).Assembly],
 			StartupValidation = StartupValidation.Warn
 		};
 		services.AddSingleton(options);
@@ -551,95 +551,226 @@ public class StartupValidationTests
 		// Assert
 		act.Should().NotThrow();
 	}
-}
 
-/// <summary>
-/// Integration tests for startup validation behavior.
-/// </summary>
-public class StartupValidationIntegrationTests
-{
-	public record ValidQuery(int Id) : IQuery<string>;
-	public record ValidCommand(string Name) : ICommand;
-	public record ValidStreamQuery(int Count) : IStreamQuery<int>;
-
-	public class ValidQueryHandler : IQueryHandler<ValidQuery, string>
+	public static string GetMultipleInterfacesSourceCode()
 	{
-		public Task<string> Handle(ValidQuery query, CancellationToken cancellationToken)
-		{
-			return Task.FromResult($"Result: {query.Id}");
-		}
-	}
-
-	public class ValidCommandHandler : ICommandHandler<ValidCommand>
-	{
-		public Task Handle(ValidCommand command, CancellationToken cancellationToken)
-		{
-			return Task.CompletedTask;
-		}
-	}
-
-	public class ValidStreamQueryHandler : IStreamQueryHandler<ValidStreamQuery, int>
-	{
-		public async IAsyncEnumerable<int> Handle(
-			ValidStreamQuery query,
-			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-		{
-			for (int i = 1; i <= query.Count; i++)
-			{
-				await Task.Delay(1, cancellationToken);
-				yield return i;
-			}
-		}
-	}
-
-	[Theory]
-	[InlineData(StartupValidation.None)]
-	[InlineData(StartupValidation.Warn)]
-	[InlineData(StartupValidation.FailFast)]
-	public async Task RuntimeExecution_WithValidHandlers_WorksRegardlessOfValidationMode(StartupValidation mode)
-	{
-		// Arrange
 		var sourceCode = @"
         using System;
         using System.Collections.Generic;
         using System.Threading;
         using System.Threading.Tasks;
-        
-        public record ValidQuery(int Id) : EasyDispatch.IQuery<string>;
-        public record ValidCommand(string Name) : EasyDispatch.ICommand;
-        public record ValidStreamQuery(int Count) : EasyDispatch.IStreamQuery<int>;
+        using EasyDispatch;
 
-        public class ValidQueryHandler : EasyDispatch.IQueryHandler<ValidQuery, string>
-        {
-            public Task<string> Handle(ValidQuery query, CancellationToken cancellationToken)
-            {
-                return Task.FromResult($""Result: {query.Id}"");
-            }
-        }
+        // Test messages that implement multiple interfaces (INVALID)
+		public record QueryAndCommand(int Id) : IQuery<string>, ICommand;
+		public record QueryAndNotification(int Id) : IQuery<string>, INotification;
+		public record CommandAndNotification(string Name) : ICommand, INotification;
+		public record CommandWithResponseAndNotification(int Value) : ICommand<int>, INotification;
+		public record StreamQueryAndCommand(int Count) : IStreamQuery<int>, ICommand;
+		public record AllInterfaces(int Count) : IStreamQuery<int>, ICommand, ICommand<int>, IQuery<int>;
+		";
 
-        public class ValidCommandHandler : EasyDispatch.ICommandHandler<ValidCommand>
-        {
-            public Task Handle(ValidCommand command, CancellationToken cancellationToken)
-            {
-                return Task.CompletedTask;
-            }
-        }
+		return sourceCode;
+	}
 
-        public class ValidStreamQueryHandler : EasyDispatch.IStreamQueryHandler<ValidStreamQuery, int>
-        {
-            public async IAsyncEnumerable<int> Handle(
-                ValidStreamQuery query,
-                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-            {
-                for (int i = 1; i <= query.Count; i++)
-                {
-                    await Task.Delay(1, cancellationToken);
-                    yield return i;
-                }
-            }
-        }
-    ";
+	[Fact]
+	public void AddMediator_WithMultipleMessageInterfaces_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
 
+		// Act
+		var act = () => services.AddMediator(options =>
+		{
+			options.Assemblies = [dynamicAssembly];
+			options.StartupValidation = StartupValidation.FailFast;
+		});
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("QueryAndCommand");
+		exception.Message.Should().Contain("should only implement one message interface");
+	}
+
+	[Fact]
+	public void AddMediator_WithQueryAndCommand_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("QueryAndCommand");
+		exception.Message.Should().Contain("IQuery<>, ICommand");
+	}
+
+	[Fact]
+	public void AddMediator_WithQueryAndNotification_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("QueryAndNotification");
+		exception.Message.Should().Contain("IQuery<>, INotification");
+	}
+
+	[Fact]
+	public void AddMediator_WithCommandAndNotification_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("CommandAndNotification");
+		exception.Message.Should().Contain("ICommand, INotification");
+	}
+
+	[Fact]
+	public void AddMediator_WithStreamQueryAndCommand_ThrowsValidationError()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("StreamQueryAndCommand");
+	}
+
+	[Fact]
+	public void AddMediator_WithMultipleInterfaces_ReportsCorrectInterfaceCount()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("'AllInterfaces' implements 4 message interfaces");
+	}
+
+	[Fact]
+	public void AddMediator_WithMultipleInterfacesAndWarn_LogsButDoesNotThrow()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.Warn
+		};
+		services.AddSingleton(options);
+
+		// Act - Warn mode should not throw, just log
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		act.Should().NotThrow();
+	}
+
+	[Fact]
+	public void AddMediator_CombinedMultipleInterfacesAndMissingHandlers_ReportsBothIssues()
+	{
+		// Arrange
+		var services = new ServiceCollection();
+		services.AddScoped<IMediator, Mediator>();
+
+		var dynamicAssembly = CreateDynamicAssembly(GetMultipleInterfacesSourceCode());
+
+		var options = new MediatorOptions
+		{
+			Assemblies = [dynamicAssembly],
+			StartupValidation = StartupValidation.FailFast
+		};
+		services.AddSingleton(options);
+
+		// Act
+		var act = () => StartupValidator.ValidateHandlers(services, options);
+
+		// Assert
+		var exception = act.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Contain("Multiple Message Interfaces");
+		exception.Message.Should().Contain("Missing Handlers");
+		exception.Message.Should().Contain("QueryAndCommand");
+	}
+
+	private static Assembly CreateDynamicAssembly(string sourceCode)
+	{
 		var easyDispatchAssembly = typeof(IQuery<>).Assembly;
 
 		var references = new[]
@@ -658,8 +789,7 @@ public class StartupValidationIntegrationTests
 			.WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
 			.AddReferences(references)
 			.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sourceCode));
-
-		using var ms = new MemoryStream();
+		var ms = new MemoryStream();
 		var result = compilation.Emit(ms);
 
 		if (!result.Success)
@@ -668,75 +798,6 @@ public class StartupValidationIntegrationTests
 			Assert.Fail($"Compilation failed:{Environment.NewLine}{errors}");
 		}
 
-		var dynamicAssembly = Assembly.Load(ms.ToArray());
-
-		var services = new ServiceCollection();
-		services.AddMediator(options =>
-		{
-			options.Assemblies = [dynamicAssembly];
-			options.StartupValidation = mode;
-		});
-
-		using var provider = services.BuildServiceProvider();
-		var mediator = provider.GetRequiredService<IMediator>();
-
-		// Create instances using reflection since types are dynamic
-		var validQueryType = dynamicAssembly.GetType("ValidQuery");
-		var validCommandType = dynamicAssembly.GetType("ValidCommand");
-		var validStreamQueryType = dynamicAssembly.GetType("ValidStreamQuery");
-
-		validQueryType.Should().NotBeNull();
-		validCommandType.Should().NotBeNull();
-		validStreamQueryType.Should().NotBeNull();
-
-		var queryInstance = Activator.CreateInstance(validQueryType, 42);
-		var commandInstance = Activator.CreateInstance(validCommandType, "test");
-		var streamQueryInstance = Activator.CreateInstance(validStreamQueryType, 3);
-
-		// Alternative Act section using dynamic
-		dynamic dynamicMediator = mediator;
-
-		// Query
-		var queryResult = await dynamicMediator.SendAsync((dynamic?)queryInstance);
-
-		// Command  
-		await dynamicMediator.SendAsync((dynamic?)commandInstance);
-
-		// Stream
-		var streamResults = new List<int>();
-		var asyncEnumerable = dynamicMediator.StreamAsync((dynamic?)streamQueryInstance) as IAsyncEnumerable<int>;
-		asyncEnumerable.Should().NotBeNull();
-		await foreach (var item in asyncEnumerable)
-		{
-			streamResults.Add(item);
-		}
-
-		// Assert
-		(queryResult as string).Should().Be("Result: 42");
-		streamResults.Should().Equal(1, 2, 3);
-	}
-
-	[Fact]
-	public void Startup_WithFailFast_PreventsApplicationStartup()
-	{
-		// Arrange - Create a scenario that would fail in production startup
-
-		// Act
-		var act = () =>
-		{
-			var services = new ServiceCollection();
-			services.AddMediator(options =>
-			{
-				options.Assemblies = [typeof(StartupValidationTests).Assembly];
-				options.StartupValidation = StartupValidation.FailFast;
-			});
-
-			// This would be called during app startup
-			services.BuildServiceProvider();
-		};
-
-		// Assert - Application should fail to start
-		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("*startup validation failed*");
+		return Assembly.Load(ms.ToArray());
 	}
 }

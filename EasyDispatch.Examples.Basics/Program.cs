@@ -93,7 +93,11 @@ class Program
 		var services = new ServiceCollection();
 
 		// Register mediator with current assembly
-		services.AddMediator(typeof(Program).Assembly);
+		services.AddMediator(opt =>
+		{
+			opt.Assemblies = [typeof(Program).Assembly];
+			opt.StartupValidation = StartupValidation.FailFast;
+		});
 
 		return services;
 	}

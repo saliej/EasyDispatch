@@ -8,7 +8,7 @@
 		<!-- Package Properties -->
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageId>EasyDispatch</PackageId>
-		<Version>1.0.6</Version>
+		<Version>1.0.7</Version>
 		<Authors>Salie Jakoet</Authors>
 		<Description>A Mediator library focused on ease-of-use.</Description>
 		<PackageTags>mediator;cqrs;pattern</PackageTags>

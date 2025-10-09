@@ -52,106 +52,24 @@ internal static class StartupValidator
 			.Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
 			.ToList();
 
-		// Validate queries
-		var queries = messageTypes
-			.Where(t => t.GetInterfaces()
-				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
-			.ToList();
+		PerformMultipleInterfaceValidation(messageTypes, results);
 
-		foreach (var query in queries)
-		{
-			var queryInterface = query.GetInterfaces()
-				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>));
+		PerformQueryValidation(services, messageTypes, results);
 
-			var responseType = queryInterface.GetGenericArguments()[0];
-			var handlerType = typeof(IQueryHandler<,>).MakeGenericType(query, responseType);
+		PerformStreamingQueryValidation(services, messageTypes, results);
 
-			var handlerCount = CountHandlers(services, handlerType);
+		PerformVoidCommandValidation(services, results, messageTypes);
 
-			if (handlerCount == 0)
-			{
-				results.Add(new ValidationResult(
-					query,
-					handlerType,
-					"Query",
-					ValidationIssue.MissingHandler));
-			}
-			else if (handlerCount > 1)
-			{
-				results.Add(new ValidationResult(
-					query,
-					handlerType,
-					"Query",
-					ValidationIssue.MultipleHandlers,
-					handlerCount));
-			}
-		}
+		PerformResponseCommandValidation(services, messageTypes, results);
 
-		// Validate streaming queries
-		var streamQueries = messageTypes
-			.Where(t => t.GetInterfaces()
-				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>)))
-			.ToList();
+		// Note: Notifications are NOT validated as they can have zero or multiple handlers
+		// This is by design for the pub/sub pattern
 
-		foreach (var query in streamQueries)
-		{
-			var queryInterface = query.GetInterfaces()
-				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>));
+		return results;
+	}
 
-			var resultType = queryInterface.GetGenericArguments()[0];
-			var handlerType = typeof(IStreamQueryHandler<,>).MakeGenericType(query, resultType);
-
-			var handlerCount = CountHandlers(services, handlerType);
-
-			if (handlerCount == 0)
-			{
-				results.Add(new ValidationResult(
-					query,
-					handlerType,
-					"StreamQuery",
-					ValidationIssue.MissingHandler));
-			}
-			else if (handlerCount > 1)
-			{
-				results.Add(new ValidationResult(
-					query,
-					handlerType,
-					"StreamQuery",
-					ValidationIssue.MultipleHandlers,
-					handlerCount));
-			}
-		}
-
-		// Validate void commands
-		var voidCommands = messageTypes
-			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
-			.ToList();
-
-		foreach (var command in voidCommands)
-		{
-			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
-
-			var handlerCount = CountHandlers(services, handlerType);
-
-			if (handlerCount == 0)
-			{
-				results.Add(new ValidationResult(
-					command,
-					handlerType,
-					"Command (void)",
-					ValidationIssue.MissingHandler));
-			}
-			else if (handlerCount > 1)
-			{
-				results.Add(new ValidationResult(
-					command,
-					handlerType,
-					"Command (void)",
-					ValidationIssue.MultipleHandlers,
-					handlerCount));
-			}
-		}
-
+	private static void PerformResponseCommandValidation(IServiceCollection services, List<Type> messageTypes, List<ValidationResult> results)
+	{
 		// Validate commands with response
 		var commandsWithResponse = messageTypes
 			.Where(t => t.GetInterfaces()
@@ -186,11 +104,163 @@ internal static class StartupValidator
 					handlerCount));
 			}
 		}
+	}
 
-		// Note: Notifications are NOT validated as they can have zero or multiple handlers
-		// This is by design for the pub/sub pattern
+	private static void PerformVoidCommandValidation(IServiceCollection services, List<ValidationResult> results, List<Type> messageTypes)
+	{
+		var voidCommands = messageTypes
+			.Where(t => t.GetInterfaces().Contains(typeof(ICommand)))
+			.ToList();
 
-		return results;
+		foreach (var command in voidCommands)
+		{
+			var handlerType = typeof(ICommandHandler<>).MakeGenericType(command);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command (void)",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					command,
+					handlerType,
+					"Command (void)",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+	}
+
+	private static void PerformStreamingQueryValidation(IServiceCollection services, List<Type> messageTypes, List<ValidationResult> results)
+	{
+		var streamQueries = messageTypes
+			.Where(t => t.GetInterfaces()
+				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>)))
+			.ToList();
+
+		foreach (var query in streamQueries)
+		{
+			var queryInterface = query.GetInterfaces()
+				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>));
+
+			var resultType = queryInterface.GetGenericArguments()[0];
+			var handlerType = typeof(IStreamQueryHandler<,>).MakeGenericType(query, resultType);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"StreamQuery",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"StreamQuery",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+	}
+
+	private static void PerformQueryValidation(IServiceCollection services, List<Type> messageTypes, List<ValidationResult> results)
+	{
+		var queries = messageTypes
+			.Where(t => t.GetInterfaces()
+				.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
+			.ToList();
+
+		foreach (var query in queries)
+		{
+			var queryInterface = query.GetInterfaces()
+				.First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>));
+
+			var responseType = queryInterface.GetGenericArguments()[0];
+			var handlerType = typeof(IQueryHandler<,>).MakeGenericType(query, responseType);
+
+			var handlerCount = CountHandlers(services, handlerType);
+
+			if (handlerCount == 0)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"Query",
+					ValidationIssue.MissingHandler));
+			}
+			else if (handlerCount > 1)
+			{
+				results.Add(new ValidationResult(
+					query,
+					handlerType,
+					"Query",
+					ValidationIssue.MultipleHandlers,
+					handlerCount));
+			}
+		}
+	}
+
+	private static void PerformMultipleInterfaceValidation(List<Type> messageTypes, List<ValidationResult> results)
+	{
+		foreach (var type in messageTypes)
+		{
+			var interfaces = type.GetInterfaces();
+			int interfaceCount = 0;
+			string[] implementedInterfaces = new string[4];
+			int index = 0;
+
+			if (interfaces.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IQuery<>)))
+			{
+				interfaceCount++;
+				implementedInterfaces[index++] = "IQuery<>";
+			}
+
+			if (interfaces.Contains(typeof(ICommand)))
+			{
+				interfaceCount++;
+				implementedInterfaces[index++] = "ICommand";
+			}
+
+			if (interfaces.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommand<>)))
+			{
+				interfaceCount++;
+				implementedInterfaces[index++] = "ICommand<>";
+			}
+
+			if (interfaces.Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamQuery<>)))
+			{
+				interfaceCount++;
+				implementedInterfaces[index++] = "IStreamQuery<>";
+			}
+
+			if (interfaces.Contains(typeof(INotification)))
+			{
+				interfaceCount++;
+				implementedInterfaces[index++] = "INotification";
+			}
+
+			if (interfaceCount > 1)
+			{
+				results.Add(new ValidationResult(
+					type,
+					null!,
+					string.Join(", ", implementedInterfaces.Take(index)),
+					ValidationIssue.MultipleMessageInterfaces,
+					interfaceCount));
+			}
+		}
 	}
 
 	private static int CountHandlers(IServiceCollection services, Type handlerType)
@@ -202,6 +272,23 @@ internal static class StartupValidator
 	{
 		var missingHandlers = results.Where(r => r.Issue == ValidationIssue.MissingHandler).ToList();
 		var multipleHandlers = results.Where(r => r.Issue == ValidationIssue.MultipleHandlers).ToList();
+		var multipleInterfaces = results.Where(r => r.Issue == ValidationIssue.MultipleMessageInterfaces).ToList();
+
+		if (multipleInterfaces.Count > 0)
+		{
+			logger?.LogWarning(
+				"EasyDispatch startup validation found {Count} message(s) implementing multiple message interfaces:",
+				multipleInterfaces.Count);
+
+			foreach (var result in multipleInterfaces)
+			{
+				logger?.LogWarning(
+					"  '{MessageName}' implements {Count} interfaces: {Interfaces}. A message should only implement one message interface.",
+					result.MessageType.Name,
+					result.HandlerCount,
+					result.MessageCategory);
+			}
+		}
 
 		if (missingHandlers.Count > 0)
 		{
@@ -245,8 +332,17 @@ internal static class StartupValidator
 	{
 		var missingHandlers = results.Where(r => r.Issue == ValidationIssue.MissingHandler).ToList();
 		var multipleHandlers = results.Where(r => r.Issue == ValidationIssue.MultipleHandlers).ToList();
+		var multipleInterfaces = results.Where(r => r.Issue == ValidationIssue.MultipleMessageInterfaces).ToList();
 
 		var errorMessages = new List<string>();
+
+		if (multipleInterfaces.Count > 0)
+		{
+			errorMessages.Add($"\nMultiple Message Interfaces ({multipleInterfaces.Count}):");
+			errorMessages.AddRange(multipleInterfaces.Select(r =>
+				$"  - '{r.MessageType.FullName}' implements {r.HandlerCount} message interfaces: {r.MessageCategory}. " +
+				$"A message should only implement one message interface."));
+		}
 
 		if (missingHandlers.Count > 0)
 		{
@@ -279,7 +375,8 @@ internal static class StartupValidator
 	private enum ValidationIssue
 	{
 		MissingHandler,
-		MultipleHandlers
+		MultipleHandlers,
+		MultipleMessageInterfaces
 	}
 
 	private record ValidationResult(

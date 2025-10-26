@@ -9,11 +9,11 @@ A lightweight, simple Mediator library for .NET focused on ease-of-use and imple
 ## Features
 
 - Minimal boilerplate, intuitive API  
-- CQRS support: Clean separation of queries, commands, and notifications  
+- CQRS support: clean separation of queries, commands, and notifications  
 - Streaming queries
 - Pipeline behaviours
 - Polymorphic Dispatch 
-- Startup Validation: catch missing handlers at application startup  
+- Startup validation: catch missing handlers at application startup  
 - Built-in activity tracing for observability  
 
 ## Installation

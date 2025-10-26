@@ -8,13 +8,13 @@ A lightweight, simple Mediator library for .NET focused on ease-of-use and imple
 
 ## Features
 
-**Simple API** - Minimal boilerplate, intuitive API  
-**CQRS Support** - Clean separation of queries, commands, and notifications  
-**Streaming Queries** - Handle large datasets efficiently with `IAsyncEnumerable`  
-**Pipeline Behaviors** - Add cross-cutting concerns like logging and validation  
-**Polymorphic Dispatch** - Notifications handled by base class and interface handlers  
-**Startup Validation** - Catch missing handlers at application startup  
-**OpenTelemetry Support** - Built-in Activity tracing for observability  
+- Minimal boilerplate, intuitive API  
+- CQRS support: Clean separation of queries, commands, and notifications  
+- Streaming queries
+- Pipeline behaviours
+- Polymorphic Dispatch 
+- Startup Validation: catch missing handlers at application startup  
+- Built-in activity tracing for observability  
 
 ## Installation
 
